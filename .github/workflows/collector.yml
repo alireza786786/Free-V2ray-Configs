@@ -1,107 +1,133 @@
-name: Unified Collector (auto-chain, dual token)
+name: Goodbaye Unified Collector Pipeline
 
 on:
-  workflow_dispatch:      # فقط با اجرای دستی شروع می‌شود
+  workflow_dispatch:      # قابلیت اجرای دستی
+  schedule:
+    - cron: '*/30 * * * *' # اجرای زمان‌بندی‌شده پشتیبان هر ۳۰ دقیقه
 
 concurrency:
-  group: collector-run
+  group: collector-execution
   cancel-in-progress: false
 
 jobs:
-  collect:
+  build-and-collect:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - name: 🐍 Set up Python Environment
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.15'
+          python-version: '3.12'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: 📦 Install Requirements
         run: pip install -r config/requirements.txt
 
-      - name: Run Telegram Collector
+      - name: 🛡️ Pre-Run Security Guardian Sweep
+        run: python src/repo_guardian.py
+
+      - name: 📡 Run Telegram Collector
         run: python src/telegram_collector.py
 
-      - name: Generate GitHub App token
+      # --- تولید توکن گیت‌هاب اپ برای چرخش دوگانه سهمیه ---
+      - name: 🔑 Generate GitHub App Token (Optional Fallback)
         id: app-token
+        continue-on-error: true
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
 
-      # --- مدیریت شمارنده برای الگوی Classic, Classic, App, App ---
-      - name: Select token based on counter
+      - name: 🪙 Select Token (Dual-Token Rotation)
         id: select-token
         run: |
+          mkdir -p data
           COUNTER_FILE="data/token_state.txt"
           if [ ! -f "$COUNTER_FILE" ]; then
             echo "0" > "$COUNTER_FILE"
           fi
           COUNTER=$(cat "$COUNTER_FILE")
-          echo "Current counter: $COUNTER"
+          echo "Current token counter: $COUNTER"
 
-          if [ "$COUNTER" -eq 0 ] || [ "$COUNTER" -eq 1 ]; then
-            echo "token=${{ secrets.GH_TOKEN }}" >> $GITHUB_OUTPUT
-            echo "Using Classic token (counter $COUNTER)"
+          APP_TOKEN="${{ steps.app-token.outputs.token }}"
+          if [ "$COUNTER" -ge 2 ] && [ -n "$APP_TOKEN" ]; then
+            echo "token=$APP_TOKEN" >> $GITHUB_OUTPUT
+            echo "Using GitHub App token"
           else
-            echo "token=${{ steps.app-token.outputs.token }}" >> $GITHUB_OUTPUT
-            echo "Using GitHub App token (counter $COUNTER)"
+            echo "token=${{ secrets.GH_TOKEN }}" >> $GITHUB_OUTPUT
+            echo "Using Classic PAT token"
           fi
 
           NEXT=$(( (COUNTER + 1) % 4 ))
           echo "$NEXT" > "$COUNTER_FILE"
 
-      - name: Run collector
+      - name: 🐙 Run GitHub Deep Collector
         env:
           GITHUB_TOKEN: ${{ steps.select-token.outputs.token }}
           RUN_MODE: frequent
           MAX_AGE_HOURS: 0.5
         run: python src/collector_git.py
 
-      - name: Split joined proxy links
+      - name: ✂️ Split Joined Proxy Links
         run: |
           if [ -f all_servers.txt ]; then
             python src/split_links.py all_servers.txt
           fi
 
-      - name: Advanced dedup configs
+      - name: 🧹 Semantic Canonical Deduplication
         run: |
           if [ -f all_servers.txt ]; then
-            python src/dedup_configs.py all_servers.txt
+            python src/dedup_configs.py all_servers.txt --rewrite
           fi
 
-      - name: Rebuild protocol files from cleaned all_servers.txt
-        run: python src/rebuild_protocols.py
+      - name: ⚡ Real Latency Probe & GeoIP Resolver (Ping < 500ms)
+        run: |
+          if [ -f all_servers.txt ]; then
+            python src/checker.py all_servers.txt
+          fi
 
-      - name: Commit and push updated files
+      - name: 🏷️ Apply Goodbaye 5-Line Official Remark Standard
+        run: |
+          if [ -f data/tested_servers.json ]; then
+            python src/remarker.py data/tested_servers.json all_servers.txt
+          fi
+
+      - name: 🗂️ Sharding, Packages & Web Panel Stats
+        run: python src/sharder.py
+
+      - name: 🛡️ Post-Processing Security Audit
+        run: python src/repo_guardian.py
+
+      - name: 📢 Publish to Telegram Channel with 4 Glass Buttons
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TARGET_CHAT_ID: ${{ secrets.TARGET_CHAT_ID || '@Goodbaye_filtering' }}
+        run: python src/telegram_publisher.py
+
+      - name: 💾 Commit and Push Verified Outputs
         timeout-minutes: 5
         continue-on-error: true
         run: |
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
-          # ساخت پوشه‌های ضروری اگر وجود ندارند
+          git config user.name "Goodbaye Actions Bot"
+          git config user.email "bot@goodbaye.internal"
           mkdir -p servers data
-          # اطمینان از وجود all_servers.txt
           touch all_servers.txt
-          # افزودن فایل‌ها (حتی untrackedها)
           git add -A all_servers.txt servers/ data/ 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "🔄 Update all servers [skip ci]"
+            git commit -m "🔄 [Goodbaye Standard] Update Live Servers & Subscriptions [skip ci]"
             git pull --rebase --strategy-option ours
             git push
           fi
 
-      - name: Trigger next run
+      - name: 🔁 Self-Trigger Next Run (Continuous Auto-Loop)
         if: success()
         uses: actions/github-script@v7
         with:
