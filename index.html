@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goodbaye Filtering — وب‌پنل آنلاین سابسکریپشن V2Ray</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(22, 30, 49, 0.75);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --primary: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.4);
+            --accent: #10b981;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Vazirmatn', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: radial-gradient(circle at 50% 0%, #1e293b 0%, var(--bg-color) 75%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 20px 15px 50px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-top: 10px;
+        }
+
+        .badge-brand {
+            display: inline-block;
+            background: linear-gradient(135deg, #2563eb, #3b82f6);
+            color: white;
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 6px 16px;
+            border-radius: 9999px;
+            box-shadow: 0 0 20px var(--primary-glow);
+            margin-bottom: 15px;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 900;
+            margin-bottom: 10px;
+            background: linear-gradient(180deg, #ffffff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.desc {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        /* Radar & Status Bar */
+        .radar-bar {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            backdrop-filter: blur(12px);
+            margin-bottom: 25px;
+            text-align: center;
+        }
+
+        .radar-item .val {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .radar-item .lbl {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Operator Tabs */
+        .operator-filters {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .op-btn {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .op-btn.active, .op-btn:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px var(--primary-glow);
+        }
+
+        /* Config Grid */
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+
+        @media (min-width: 640px) {
+            .card-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .config-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 18px;
+            backdrop-filter: blur(10px);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+
+        .config-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(59, 130, 246, 0.4);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-tag {
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            font-weight: 600;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-copy {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-copy:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-qr {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+        }
+
+        .btn-qr:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Modal QR */
+        .modal {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+            backdrop-filter: blur(8px);
+        }
+
+        .modal-content {
+            background: #1e293b;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 25px;
+            text-align: center;
+            max-width: 320px;
+            width: 100%;
+        }
+
+        .modal-content img {
+            width: 220px;
+            height: 220px;
+            border-radius: 12px;
+            margin: 15px 0;
+            background: white;
+            padding: 8px;
+        }
+
+        .btn-close {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        /* Telegram Links */
+        .official-links {
+            margin-top: 35px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        @media (min-width: 640px) {
+            .official-links {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .link-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 14px;
+            border-radius: 14px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .link-main {
+            background: #0088cc;
+            color: white;
+        }
+
+        .link-vip {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #10b981;
+            color: white;
+            padding: 10px 24px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+            display: none;
+            z-index: 2000;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="badge-brand">🛡️ Goodbaye Universal Standard</div>
+        <h1>وب‌پنل سابسکریپشن آزاد و هوشمند</h1>
+        <p class="desc">کانفیگ‌های تست‌شده با پینگ سخت‌گیرانه (زیر ۵۰۰ میلی‌ثانیه) — آپدیت دائمی</p>
+    </header>
+
+    <div class="radar-bar">
+        <div class="radar-item">
+            <div class="val">Ping &lt; 500ms</div>
+            <div class="lbl">شاخص کیفیت اتصال</div>
+        </div>
+        <div class="radar-item">
+            <div class="val">🟢 فعال و زنده</div>
+            <div class="lbl">وضعیت سیستم پایش</div>
+        </div>
+        <div class="radar-item">
+            <div class="val">100% Free</div>
+            <div class="lbl">دسترسی همگانی</div>
+        </div>
+    </div>
+
+    <!-- فیلتر اپراتور -->
+    <div class="operator-filters">
+        <button class="op-btn active" onclick="filterCards('all')">🌐 همه کانفیگ‌ها</button>
+        <button class="op-btn" onclick="filterCards('mci')">📱 همراه اول</button>
+        <button class="op-btn" onclick="filterCards('irancell')">🟡 ایرانسل</button>
+        <button class="op-btn" onclick="filterCards('wifi')">📶 مخابرات و Wi-Fi</button>
+        <button class="op-btn" onclick="filterCards('socks')">⚡ اضطراری SOCKS5</button>
+    </div>
+
+    <!-- لیست سابسکریپشن‌ها -->
+    <div class="card-grid" id="cardGrid">
+        <!-- کارت جامع -->
+        <div class="config-card" data-op="all mci irancell wifi">
+            <div class="card-header">
+                <div class="card-title">🚀 پکیج اصلی (All VIP)</div>
+                <div class="card-tag">کامل و تست‌شده</div>
+            </div>
+            <p style="font-size: 0.8rem; color: #94a3b8;">شامل تمامی پروتکل‌های سالم با پینگ زیر ۵۰۰ میلی‌ثانیه</p>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('all_servers.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="showQR('all_servers.txt', 'پکیج اصلی All VIP')">📱 بارکد QR</button>
+            </div>
+        </div>
+
+        <!-- کارت لایت -->
+        <div class="config-card" data-op="all mci irancell wifi">
+            <div class="card-header">
+                <div class="card-title">⚡ پکیج لایت (Lite Ultra)</div>
+                <div class="card-tag">فوق‌سریع</div>
+            </div>
+            <p style="font-size: 0.8rem; color: #94a3b8;">گلچین سرورهای کم‌پینگ مخصوص گیمینگ و وبگردی روان</p>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('servers/lite.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="showQR('servers/lite.txt', 'پکیج لایت Ultra')">📱 بارکد QR</button>
+            </div>
+        </div>
+
+        <!-- بدون کلودفلر -->
+        <div class="config-card" data-op="all mci wifi">
+            <div class="card-header">
+                <div class="card-title">🛡️ بدون کلودفلر (No-CF)</div>
+                <div class="card-tag">ضد اختلال</div>
+            </div>
+            <p style="font-size: 0.8rem; color: #94a3b8;">مخصوص مواقعی که دامنه و IPهای کلودفلر دچار افت شدید هستند</p>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('servers/no_cloudflare.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="showQR('servers/no_cloudflare.txt', 'پکیج بدون کلودفلر')">📱 بارکد QR</button>
+            </div>
+        </div>
+
+        <!-- پروکسی اضطراری -->
+        <div class="config-card" data-op="socks">
+            <div class="card-header">
+                <div class="card-title">🚨 پروکسی اضطراری SOCKS5</div>
+                <div class="card-tag">اتصال آنی تلگرام</div>
+            </div>
+            <p style="font-size: 0.8rem; color: #94a3b8;">پروتکل‌های اضطراری برای وصل شدن مستقیم به پیام‌رسان‌ها</p>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('servers/emergency_socks5.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="showQR('servers/emergency_socks5.txt', 'پروکسی اضطراری SOCKS5')">📱 بارکد QR</button>
+            </div>
+        </div>
+
+        <!-- VLESS -->
+        <div class="config-card" data-op="all mci irancell wifi">
+            <div class="card-header">
+                <div class="card-title">🔷 ساب اختصاصی VLESS</div>
+                <div class="card-tag">Reality & gRPC</div>
+            </div>
+            <p style="font-size: 0.8rem; color: #94a3b8;">کانفیگ‌های VLESS همراه با متدهای امنیتی جدید Reality</p>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('servers/vless.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="showQR('servers/vless.txt', 'ساب اختصاصی VLESS')">📱 بارکد QR</button>
+            </div>
+        </div>
+
+        <!-- VMess -->
+        <div class="config-card" data-op="all wifi">
+            <div class="card-header">
+                <div class="card-title">🔶 ساب اختصاصی VMess</div>
+                <div class="card-tag">پایدار</div>
+            </div>
+            <p style="font-size: 0.8rem; color: #94a3b8;">کانفیگ‌های VMess با ریمارک ۵ خطی استاندارد Goodbaye</p>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('servers/vmess.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="showQR('servers/vmess.txt', 'ساب اختصاصی VMess')">📱 بارکد QR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- دکمه‌های رسمی تلگرام طبق اصل دوم منشور -->
+    <div class="official-links">
+        <a href="https://t.me/Goodbaye_filtering" target="_blank" class="link-btn link-main">
+            📢 کانال اصلی Goodbaye Filtering
+        </a>
+        <a href="https://t.me/CONFIG_V2RAY_VIP" target="_blank" class="link-btn link-vip">
+            ⚡ کانال و گروه گفتگوی VIP
+        </a>
+    </div>
+</div>
+
+<!-- Modal QR Code -->
+<div class="modal" id="qrModal" onclick="closeQR(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <h3 id="modalTitle" style="font-size: 1.1rem; margin-bottom: 5px;">بارکد QR</h3>
+        <p style="font-size: 0.75rem; color: #94a3b8;">اسکن با دوربین نرم‌افزار v2rayNG یا Hiddify</p>
+        <img id="qrImage" src="" alt="QR Code">
+        <button class="btn-close" onclick="document.getElementById('qrModal').style.display='none'">بستن</button>
+    </div>
+</div>
+
+<div class="toast" id="toast">لینک سابسکریپشن با موفقیت کپی شد!</div>
+
+<script>
+    const BASE_URL = "https://alireza786786.github.io/Free-V2ray-Configs/";
+
+    function copyLink(subPath) {
+        const fullUrl = BASE_URL + subPath;
+        navigator.clipboard.writeText(fullUrl).then(() => {
+            const toast = document.getElementById("toast");
+            toast.style.display = "block";
+            setTimeout(() => { toast.style.display = "none"; }, 2500);
+        });
+    }
+
+    function showQR(subPath, title) {
+        const fullUrl = BASE_URL + subPath;
+        document.getElementById("modalTitle").innerText = title;
+        document.getElementById("qrImage").src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(fullUrl)}`;
+        document.getElementById("qrModal").style.display = "flex";
+    }
+
+    function closeQR(e) {
+        document.getElementById("qrModal").style.display = "none";
+    }
+
+    function filterCards(tag) {
+        const cards = document.querySelectorAll(".config-card");
+        const btns = document.querySelectorAll(".op-btn");
+        btns.forEach(b => b.classList.remove("active"));
+        event.target.classList.add("active");
+
+        cards.forEach(card => {
+            const ops = card.getAttribute("data-op");
+            if (tag === 'all' || ops.includes(tag)) {
+                card.style.display = "block";
+            } else {
+                card.style.display = "none";
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
