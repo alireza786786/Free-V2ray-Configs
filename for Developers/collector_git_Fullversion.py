@@ -1,0 +1,2074 @@
+#!/usr/bin/env python3
+import asyncio
+import aiohttp
+import aiosqlite
+import base64
+import re
+import os
+import json
+import logging
+import time
+from datetime import datetime, timezone, timedelta
+from dotenv import load_dotenv
+from tqdm import tqdm
+import backoff
+from typing import Dict, Optional, Set, List, Tuple
+import binascii
+
+# ============================
+# ⚙️ بخش ۱: پیکربندی نهایی (ساعتی، توقف خودکار و ذخیره‌ی شاخه‌ها)
+# ============================
+CONFIG_DEFAULTS = {
+    "SEARCH_PERIOD_DAYS": 1,            # فقط برای مرحله‌ی جستجو (پوشش اولیه)
+       "REPO_SEARCH_PAGES": 1,
+    "CODE_SEARCH_PAGES": 1,
+    "EXTRA_UPDATED_REPO_PAGES": 1,
+    "MAX_AGE_HOURS": 1,                 # 🆕 فیلتر ساعتی: فقط مخازنی که در ۱ ساعت گذشته push داشته‌اند
+
+    "GENERAL_CONCURRENT_REQUESTS": 80,
+    "SEARCH_API_CONCURRENCY": 3,
+    "AIOHTTP_CONNECTION_LIMIT": 80,
+    "BATCH_SIZE": 200,
+
+    "TARGET_CORE_CONSUMPTION": 5000,
+    "CORE_PER_REPO_ESTIMATE": 5,
+    "MAX_DISCOVERED_REPOS_TO_SCAN": 800,
+    "RATE_CHECK_MIN_INTERVAL": 20,
+    "RATE_LOW_THRESHOLD": 10,
+    "RATE_SLEEP_ON_LOW": 61,
+
+    "MAX_RECURSION_DEPTH": 0,
+    "MAX_FILE_BYTES": 2 * 1024 * 1024,
+    "OUTPUT_FILE": "servers_collected.txt",
+    "DB_FILE": "collector.db",
+    "ENV_FILE": ".env",
+    "CACHE_FILE": "collector_cache.json",
+    "CACHE_EXPIRY_DAYS": 1,
+    "CHECKPOINT_FILE": "checkpoint.json",
+    "DISCOVERED_BRANCHES_FILE": "discovered_branches.json",
+}
+
+# ============================
+# 🔎 بخش ۲: منابع و کوئری‌ها (کامل)
+# ============================
+COMMON_BRANCH_NAMES = [
+    'main', 'master', 'dev', 'develop', 'v2', 'Master', 'The-Nodes-of-Clash&V2ray',
+    'tutu', 'canary', 'mineuwu', 'Clash-and-V2ray', 'branch', 'manyuser', 'Main',
+    'on', 'mian', 'v.-2.0', 'KangProxy', 'VPN', 'rm', '2.15.x', 'Config', 'up',
+    'feat/initial-project-scaffold', '5.x', 'backup', 'proxies', 'nodes', 'gh-pages',
+    'patch-1', 'release', 'latest', 'stable', 'beta', 'alpha', 'test', 'testing',
+    'staging', 'production', 'prod', 'development', 'feature', 'hotfix', 'bugfix',
+    'free', 'premium', 'iran', 'ir', 'global', 'world', 'all', 'full', 'complete',
+    'update', 'new', 'latest-configs', 'daily', 'hourly', 'auto', 'automatic',
+    'subscription', 'sub', 'config', 'configs', 'proxy', 'proxies', 'vless', 'vmess',
+    'trojan', 'shadowsocks', 'hysteria', 'hysteria2', 'tuic', 'juicity', 'reality',
+    'sing-box', 'clash', 'nekobox', 'nekoray', 'v2rayng', 'v2rayu', 'xray', 'singbox',
+    'hiddify', 'warp', 'argo', 'cloudflare', 'cf', 'cdn', 'speed', 'fast', 'best',
+    'premium-configs', 'free-nodes', 'paid', 'vip', 'exclusive', 'private', 'public',
+    'mci', 'irancell', 'mokhaberat', 'rightel', 'asiatech', 'shatel', 'v2ray-iran',
+    'pishgaman', 'hiweb', 'tci', 'parsonline', 'freeiran', 'iranfree', 'config-iran',
+    'iran-proxy', 'persian', 'farsi', 'vless-reality-iran', 'hysteria2-iran',
+    'singbox-iran', 'tuic-iran', 'juicity-iran', 'warp-iran', 'worker-iran',
+    'protonvpn-next-dev', 'devin/1777224454-initial-app', 'v2-rewrite', 'no-reflow',
+    'codex/anfisa-vpn-publish', 'init', 'Monad'
+]
+
+REPO_SEARCH_QUERIES = sorted(list(set([
+    "v2ray", "proxy", "subscribe", "vless", "vmess", "trojan", "shadowsocks", "clash",
+    "کانفیگ", "اشتراک", "رایگان", "لینک", "سرور", "节点分享", "免费vpn", "机场",
+    "翻墙", "科学上网", "Бесплатные", "прокси", "vpn", "無料ノード", "cấu hình miễn phí",
+    "بروكسي مجاني", "ücretsiz v2ray", "akun v2ray gratis", "VLESS REALITY", "VLESS TLS",
+    "Trojan gRPC", "Clash meta subscription", "hysteria2 configs", "TUIC configs",
+    "sing-box configs", "Clash-Meta configs", "Hysteria2 subscription", "TUIC subscription",
+    "nekoray config", "nekobox subscription", "juicity configs", "Shadowrocket configs",
+    "Surge proxy", "V2Ray-N configs", "v2ray subscription", "free vpn configs",
+    "shadowsocks links", "proxy collector", "v2ray aggregator", "free proxy list",
+    "ss subscription", "secure proxy subscription", "کانفیگ رایگان", "لینک اشتراک v2ray",
+    "سرور vless", "کانفیگ vmess", "v2ray nodes", "бесплатные прокси", "v2ray github",
+    "anti-censor proxy", "proxy provider", "proxy pool", "subconverter", "proxy provider list",
+    "free nodes", "daily v2ray", "node list", "clash verge", "v2ray updated",
+    "reality configuration", "hiddify", "hiddify-next", "VLESS over REALITY",
+    "sing-box one-click script", "Hysteria2 协议", "Vless-reality, Vmess-ws, Vless-grpc,Hysteria2, Tuic5",
+    "WARP Sing-Box Config Generator", "free proxy list updated", "v2ray-configs",
+    "vless-reality", "vless reality iran", "trojan grpc tls", "hysteria2 subscription free",
+    "tuic v5 configs", "free v2ray configs 2024", "v2ray panel", "v2ray subscriber",
+    "v2ray core", "v2rayu", "xrayr", "geoip v2fly", "free v2ray", "v2ray free",
+    "iran v2ray", "irancell v2ray", "mci v2ray", "mokhaberat v2ray", "asiatech v2ray",
+    "rightel v2ray", "reality vless", "warp config", "argo tunnel vless", "cloudflare v2ray", "v2ray config",
+    "ایرانسل", "همراه اول", "مخابرات", "رایتل", "آسیاتک", "شاتل", "های وب", "پیشگامان",
+      "سرور ایران", "فیلترشکن", "وی پی ان", "پروکسی", "اشتراک رایگان", "اشتراک v2ray",
+    "v2ray ایرانی", "v2ray ایران", "پروکسی ایران", "کانفیگ رایگان ایران",
+     "hysteria2 ایران", "warp اینترنت رایگان", "فیلترشکن رایگان",
+    "v2ray irancell", "v2ray mci", "v2ray mokhaberat", "v2ray rightel",
+    "v2ray asiatech", "v2ray shatel", "v2ray hiweb", "v2ray iran 2025",
+    "proxy iran free", "xray iran", "singbox iran", "reality iran",
+    "juicity iran", "warp iran", "iran v2ray config",
+    "iran free proxy", "iran subscription v2ray",
+    "إيران بروكسي", "ایران vpn", "Иран v2ray", "İran v2ray ücretsiz", "shadowsocksr",
+    "xray", "ss", "v2ray-subscriber", "xray-core", "gfw-china", "bulk-connection",
+    "tuic", "v2ray-config", "free-v2ray", "ebrasha", "abdal", "v2ray-list"
+])))
+
+CODE_SEARCH_QUERIES = sorted(list(set([
+    '"vless://" security=reality', '"vless://" type=grpc security=tls', '"trojan://" type=grpc',
+    '"hysteria2://"', '"tuic://"', '"juicity://"', '"ss://"', '"ssr://"', '"hysteria://"',
+    'filename:subscription reality', 'filename:clash tls', 'filename:all.txt "vless://"',
+    'filename:proxy "vmess://"', 'filename:sub.json', 'filename:sub.txt "vless://"',
+    'filename:proxies.yaml "trojan://"', 'filename:README.md "vless://"', 'filename:Dockerfile "vless://"',
+    'filename:nekoray-config.json', 'filename:hysteria.json "outbounds"', 'extension:yaml "proxies:"',
+    'extension:json "outbounds"', 'extension:txt "vmess://"', 'extension:yaml "proxy-providers"',
+    'extension:json "REALITY-VLESS"', 'path:proxies', 'path:sub "trojan://"', 'path:data "vless"',
+    'path:subscribe "https://"', 'path:subscribe vless', '"/api/v1/client/subscribe?token="',
+    '"/api/v1/client/subscribe?token=" in:file', 'filetype:txt subscription', 'language:yaml "vless"',
+    'language:json "outbounds"', 'language:yaml "proxy-groups:"', 'language:json "inbounds" "vless"',
+    '"clash" "reality"', '"V2RAY" "CONFIG"', '"vless reality" OR "vmess reality"',
+    'gist.github.com "vless://"', '"vless://" in:comments', 'sni:"dl.google.com" "vless://"',
+    'sni:"www.speedtest.net"', '"proxies:" AND "server:" AND "port:" extension:yaml',
+    '"trojan-go"', 'vless iran', 'Mokhaberat vless', '("vless" OR "vmess" OR "trojan") AND ("iran" OR "MCI" OR "irancell")',
+    '("Mokhaberat" OR "Asiatech" OR "Rightel") AND "vless://"', '"vless://" "节点"', '"trojan://" "бесплатно"',
+    'v2ray 無料', 'v2ray 무료 구독', '"cấu hình v2ray miễn phí"', '"ซับ v2ray" language:txt',
+    'filename:hiddify.json', 'filename:sing-box.json "vless"', 'path:subs "vless"',
+    '"Vless WebSocket"', 'extension:json "vless-reality"', 'extension:txt "vless-configs"',
+    '"argo tunnel" "vless"', '"v2ray config"', '"free v2ray subscription"', '"v2rayNG config"',
+    '"reality v2ray"', 'filename:config.yaml "outbounds"', 'filename:config.json "proxies"',
+    'path:config "vless://"', 'path:subscription "vmess://"', 'filename:base64.txt', 'filename:encoded.txt',
+    'extension:sub "vless://"', 'extension:txt "trojan://"', 'filename:links.txt "hysteria2://"',
+    'filename:clash-meta.yaml "proxy-providers"', 'filename:sing-box.json "outbounds"', 'path:free "vless://"',
+    'sni:"digikala.com"', 'sni:"aparat.com"', 'sni:"namasha.com"',
+    'sni:"varzesh3.com"', 'sni:"snapp.ir"', 'sni:"tapsi.ir"',
+    'sni:"alibaba.ir"', 'sni:"divar.ir"', 'sni:"bama.ir"', 'sni:"shahrefarang.com"',
+    'sni:"filmio.ir"', 'sni:"telewebion.com"', 'sni:"anten.ir"',
+    '"Irancell" "vless://"', '"MCI" "hysteria2://"', '"Mokhaberat" AND "vless://"',
+    '"Rightel" "tuic://"', '"Asiatech" "reality"',
+    'filename:iran.txt "vless://"', 'filename:config-iran.json',
+    'path:iran "vless://"', 'path:persian "vmess://"',
+    'extension:yaml "iran" "proxies"', 'extension:json "iran" "outbounds"',
+    'language:fa "vless://"',
+    '("iran" OR "mci" OR "irancell") "hysteria2://"',
+    'sni:"speedtest.net" AND "iran"', 'sni:"www.google.com" AND "reality"'
+])))
+
+# --- کوئری‌های عمومی برای جستجوی تکمیلی با فیلتر updated (فقط ۱ صفحه) ---
+EXTRA_UPDATED_REPO_QUERIES = [
+    "v2ray", "proxy", "free v2ray", "vpn config", "iran v2ray", "reality", "iran v2ray",
+    "فیلترشکن", "v2ray irancell", "reality iran", "hysteria2 iran", "sing-box iran",
+    "tuic iran", "proxy iran", "free config iran", "iran subscription"
+]
+
+MANUAL_REPOS_TO_SCAN = sorted(list(set([
+    ("007dimkos", "dimmy-energized-adblock"), ("090809", "smb-proxy-service-wb"), ("0Pwny", "proxy-checker"),
+    ("0i-aui", "SSS---Smart-Secure-System-Project"), ("0xAbolfazl", "PyroConfig"), ("0xRadikal", "Telegram-Config-Extractor"),
+    ("0xSkybreaker", "nvidia-claude-code-proxy"), ("0xXyc", "SwizGuard"), ("0xZoomEye", "V2ray-tools"),
+    ("0xdolan", "v2ray_config_generator"), ("100522129", "Ejs-SSDD"), ("10ium", "V2Hub3"),
+    ("10ium", "V2RayAggregator"), ("10ium", "V2ray-Config"), ("10ium", "V2rayCollector"),
+    ("10ium", "VpnClashFaCollector"), ("10ium", "multi-proxy-config-fetcher"), ("10yanhon", "clash-sub"),
+    ("1126misakp", "proxy-expert"), ("1157457050", "ClashConfig"), ("1192704429", "beauty-salon-management-platform"),
+    ("123abch", "clash-overrides"), ("123jjck", "cdn-ip-ranges"), ("123oqwe", "anchor-admin"),
+    ("1305a001-ctrl", "strategy-runners"), ("14-David-06", "sirius-sg-sst"), ("1660667086", "vless-reality-3xui-onekey"),
+    ("1Shervin", "FreeShen"), ("1Shervin", "v2ray-skimmer"), ("1jmdev", "cf-ssr-hono-react-template"),
+    ("1vpn", "android_app"), ("217heidai", "adblockfilters"), ("231128ikun", "edt-for-myself"),
+    ("23wiro", "SSISAuth"), ("2445ttv", "vmess"), ("2dust", "v2rayN"),
+    ("2dust", "v2rayN-core-bin"), ("2ndShiftTech", "sst-iso"), ("30nilupulthisaranga-bit", "aegis"),
+    ("3214977626", "setup-proxy"), ("3aboody", "vscode-extension-downloader"), ("3inker", "v2ray-subscription"),
+    ("3nerg0n", "vless-parser"), ("3proxy", "3proxy"), ("3yed-61", "MTP-Collector"),
+    ("3yed-61", "Shadowsocks"), ("3yed-61", "V2rayCollector"), ("40OIL", "domain.club"),
+    ("4evergr8", "mihomoR"), ("4gptroman-wq", "clash-verge-whitelist-ru"), ("4n0nymou3", "multi-proxy-config-fetcher"),
+    ("5VNetwork", "VX"), ("5a5ehw1-star", "ssq"), ("7-yearsold", "clash-rules"),
+    ("7ayun", "SSAFY-TIL"), ("7c", "torfilter"), ("83646uguh", "Git-proxy"),
+    ("8luomin-web3", "php-blockchain-core-suite"), ("8partki", "ssa_abev"), ("9Knight9n", "v2ray-aggregator"),
+    ("9master64", "vercel-proxy"), ("9xN", "auto-ovpn"), ("A-K-6", "v2ray_scrapper_repo"),
+    ("A512-dev", "config-collector"), ("ABDALRZAQ345", "ABDALRZAQ345"), ("ABOL7889", "ssh_runner_factory"),
+    ("ADAX-3VI", "Configs"), ("AHANOV-CORPORATION", "ljg-skill-xray-paper"), ("AInvirion", "aiproxyguard"),
+    ("AJlv420", "VPN-BlackBox-Checker"), ("ALIILAPRO", "Proxy"), ("ALIILAPRO", "ProxyNest"),
+    ("ALIILAPRO", "v2rayNG-Config"), ("ANANDSOLANKE", "stockpricepredictions-ssg"), ("ARS-83", "v2ray-ConfigGenerator"),
+    ("ASGDB", "SubconverterACL"), ("ATropichev", "WinPublicIP-cpp"), ("AYMANE-GYM", "mise-setup-verification-action"),
+    ("Abalayan27", "v2ray"), ("Abdelmalik9", "microservices-lab"), ("Abdulhossein", "Autov2rayLeecher"),
+    ("AbdullahMashia", "vpn-"), ("AbedallaSbeata", "clash_of_minds_prototype"), ("Abhhinav02", "golang-advanced"),
+    ("Abobirec", "bezdelnicha-vpn0chek"), ("Abol007", "v2ray-config-hunter"), ("AcSsalazar", "AcSsalazar"),
+    ("Access-At", "proxy-list"), ("Access-At", "proxy-scraping"), ("Acefa", "Clash-override-rules"),
+    ("Adamoktora", "imperium"), ("Aditya-Konda", "prox"), ("Aeryl", "node-utils-1771921901-4"),
+    ("Aethersailor", "Custom_OpenClash_Rules"), ("Aethersailor", "SubConverter-Extended"), ("Affuyfuffyt", "v2ray-manager"),
+    ("AgungHari", "aaagang"), ("Ahmdrady", "CloudLab"), ("AhmedAj22", "best-backlink-analyzer"),
+    ("AilnBen", "clash-config"), ("Aioneas", "Surge"), ("AirLinkVPN1", "AirLinkVPN"),
+    ("Airuop", "cross"), ("Aj-Networks", "Homelab_Router-on-a-Stick"), ("Alan-Foster", "Subscriber-Goal"),
+    ("Albertarevolutionary289", "any-auto-register"), ("AlbertoRueda9", "Bit-cora-T-cnica-IV.-Laboratorio-de-Teletransportaci-n-Digital-SSH-y-RDP-"), ("AlbiDR", "Clash-Manager"),
+    ("AlchemyLink", "raven-dashboard"), ("AlchemyLink", "xray-stats-exporter"), ("Aldemirps", "ArrSuite-Guide"),
+    ("AleksejLikely", "L-ss-n52Solution"), ("Alex-010101", "raspberry-pi-media-stack"), ("Alex123Aaaaaa", "windows"),
+    ("AlexMikhin951", "my-proxy-aggregator"), ("Alexander-vecos", "ssmt"), ("Alexbuzz247", "SSM-elite"),
+    ("Alexgood321", "my-proxy-raw-link-for-all"), ("AliEgeErzin", "ssaju"), ("Alice8Flandre", "k2think2api"),
+    ("Aline001xx", "turk-arr-bridge"), ("Alireza-ALZ", "RayScout"), ("Alireza533022", "v2ray-guide-free-v2ray-v2rayng-iran"),
+    ("Alisina7", "aleftaya-ios-proxy"), ("AlistairBlake", "Github-Proxy"), ("AlterSolutions", "tornodes_lists"),
+    ("Alvin9999-newpac", "fanqiang"), ("AlxVoropaev", "informer_bot"), ("Am7nRaz", "MoonLight"),
+    ("Aman9690", "clash-config-editor"), ("Amiin-key", "ssm2027"), ("Amir603-o", "ELX"),
+    ("Amirali9687", "free_v2ray_config"), ("AmirrezaFarnamTaheri", "ConfigStream"), ("Amirrezaheydari81", "free-v2ray-for-iran"),
+    ("Amy7007", "VPN-Detector"), ("Analgesiamisuse629", "AntiDetection-ProxyBrowser-2026"), ("Anamalikay", "IPL-AUCTION-CLASH"),
+    ("AndLaynes", "clash-dashboard-v2"), ("AndYasin", "resonance-proxy"), ("Andreichenko", "v2ray-aws"),
+    ("Andrejewild", "myvpn"), ("Andy7152", "luci-app-minigate"), ("AndyYuenOk", "airport-summary"),
+    ("Anietie", "ss4-chess-league"), ("AniketPaul44", "lextex-homelab"), ("Anivice", "ccdb"),
+    ("AnixOps", "AnixOps-xray-install"), ("Anjali-gola151", "Airbnb"), ("Anna4355", "aws-physical-server-hybrid-backup-architecture"),
+    ("Annihilater", "caddy-v2ray-docker-config"), ("Anonym0usWork1221", "Free-Proxies"), ("Anonymous376c1d0cf28", "VLESS-cracker"),
+    ("Anthon3284", "IKESS"), ("AntiC1019", "clash-rules"), ("AntiC1019", "metacubex_clash-shadowrocket"),
+    ("Apale7", "opencode-provider-switch"), ("Apisit2536", "vpn-telegram-bot"), ("Arama120517", "scoop-proxy-cn"),
+    ("Arash-GJ", "v2ray-config-tester"), ("Arbimig", "ClashOfGit"), ("Archaic-Atom", "SSPSNet"),
+    ("Arefgh72", "v2ray-proxy-pars-tester"), ("Arefgh72", "v2ray-proxy-pars-tester-02"), ("Areral", "ScarletDevil"),
+    ("Argh73", "V2Ray-Vault"), ("Argh73", "VpnConfigCollector"), ("Argh94", "Proxy-List"),
+    ("Argh94", "ProxyProwler"), ("Argh94", "V2RayAutoConfig"), ("Argh94", "telegram-proxy-scraper"),
+    ("Ariedeclivitous630", "vecgate"), ("Aris1672", "pixmosaic-proxy"), ("Arjun99291", "telemt-panel"),
+    ("Armchaircounty801", "cc-weixin"), ("Armillary-italy713", "Smart-Config-Kit"), ("Arsham1ho", "telegram-bale-proxy-agent"),
+    ("Art3m1sHun", "ssd1306_driver"), ("ArtemAfonasyev", "hentai-goida-subscription"), ("Asaza366", "iron-proxy"),
+    ("Asbecov", "helios_backend"), ("Ashosystem", "r1-ssh-terminal"), ("Ashrafty", "RAE-VPN"),
+    ("AtlanticTeam", "V2rayClient"), ("Atom358", "SanekGayVPN"), ("Atsea111", "Clash"),
+    ("Au1rxx", "free-vpn-subscriptions"), ("Audenesque-confession698", "fragment-tg"), ("AuthFailed", "xray-analyzer"),
+    ("AutoFTbot", "free"), ("Automattic", "jetpack-subscribers-dashboard"), ("AutumnVN", "ssleaderboard"),
+    ("AvaterClasher", "AvaterClasher"), ("AvenCores", "goida-vpn-configs"), ("Awenforever", "CoDeepSeedeX"),
+    ("AyandaMajola01", "muon"), ("Aykay07", "NewsZ-DSA-based-news-aggregation-system-"), ("AymaneIK", "SSID"),
+    ("AzadNetCH", "Clash"), ("AzadNetCH", "V2Ray-configs"), ("Azarscientist", "ssi-protocol-oss"),
+    ("BAMresearch", "MoDaCor"), ("BSGD-3-B-CT45-WEB-DESIGN", "Tuico-Ritzgale-E"), ("Babaproates", "php-text-validator-lib"),
+    ("Bails309", "strata-client"), ("BaoNguyenz", "ai-news-aggregator-ss"), ("Barabama", "FreeNodes"),
+    ("Baraninathan", "AirBridge"), ("Baro007", "freenet"), ("Basidiomycetespanamaniancapital403", "workerd"),
+    ("Bd-Mutant7", "SSRF_Vulnerable_Lab"), ("Beallenonindustrial63", "no-ai-in-nodejs-core"), ("Bean5789", "bbd2api"),
+    ("Bedrock-Cosmos", "Launcher"), ("Behrad122", "findface-bridge"), ("Benny0731", "v2ray"),
+    ("Bes-js", "public-proxy-list"), ("BhaveshGavande23", "calculator"), ("BielGodoi", "3LayersPersistence"),
+    ("BigBadPapa", "sec-proxy"), ("Biologicaltimemistral1034", "nodris"), ("Bkhangg", "Android-V2Ray-Directory"),
+    ("BlacKSnowDot0", "Proxy-Pulse"), ("BlackKillrt", "config_for_V2Ray"), ("BlazeAuraX", "ProxyForFree"),
+    ("Bllare", "V2ray-Configs"), ("Blotchy-unbecomingness80", "openclaw-dae-skills"), ("BoBoBaSs84", "BoBoBaSs84"),
+    ("Borges005", "ai-proxy"), ("Boss-venkatesh", "Gost-Tunnel-Manager"), ("Bpcod8422", "Facebook-SSL-Pinning-Bypass-NonRoot"),
+    ("BrandonPerez915", "CineList"), ("BranislavMateas", "measurecamp-calendar-scraper"), ("BreezeBoulderMap", "Mullvad-VPN-Premium-Last-Version"),
+    ("Briejone", "Agregation-data-about-subscribe"), ("BrinkPrivate", "Surfshark-VPN-Crack-2026"), ("Brinmon", "clashtovary"),
+    ("Brosiie", "marduk"), ("Bruce6767", "Bruce-is-proxy-daddy"), ("BruceShankleIV", "Project64-1.6.2"),
+    ("Buint1504", "Predict-Fun-Farming-Bot"), ("Burgess-T", "OpenClash_Rules"), ("BusinessDen", "subscriber"),
+    ("ByteMysticRogue", "Hiddify-Warp"), ("ByteMysticRogue", "Ray2Box"), ("ByteTrue", "sub2mihomo"),
+    ("C-SSilva", "C-SSilva"), ("C0lliNN", "TestUberWebviewSSO"), ("CB-X2-Jun", "Free-v2ray-node"),
+    ("CB-X2-Jun", "https-proxy"), ("CB-X2-Jun", "proxy-lists"), ("CCJ623", "clash-rules"),
+    ("CCSH", "IPTV"), ("CELIO404", "print-markdown-so-easy"), ("CF8349", "clashdingyue"),
+    ("CG-spring", "airport-rec-t7golw"), ("CG-spring", "airport-rec-waao7d"), ("CJackHwang", "ds2api"),
+    ("CM4all", "myproxy"), ("CMON1975", "is-gamepass-worth"), ("CROSS-T", "Linux.do-Accelerator"),
+    ("CSOAI-ORG", "regulatory-webhook-mcp"), ("CWinthorpe", "codeRouter"), ("CadaKerem", "Coffin-Clash-GameProgramming2"),
+    ("CallMeTechie", "gatecontrol"), ("CaretakerNail", "anime-card-clash-aq67"), ("CaretakerNail", "anime-card-clash-cd96"),
+    ("CaretakerNail", "anime-card-clash-hj26"), ("CarlosKako", "VPN-Setup-Installation"), ("Casper-Tech-ke", "casper-free-proxies"),
+    ("Cat-Ling", "sing-box"), ("CelestialBrain", "worldpool"), ("Cellxv7", "testflight-lower-install"),
+    ("Centaurbenpulse", "Mullvad-VPN-Premium-Windows-2026"), ("Cepreu54", "vless-clean"), ("Cepreu54", "vless-clean-2"),
+    ("Chaek08", "xray-2203-vs22"), ("Chainsholaud", "McAfee-Total-Protection-2026"), ("Chandan-dev777", "WorkTrackAI"),
+    ("Charles94jp", "Clash"), ("CharlesPikachu", "freeproxy"), ("ChaselDutt", "VPN-Deep-Test"),
+    ("ChaselLLC", "gcp-detector-agent-"), ("ChaurasiyaDharmendra", "StayFinder"), ("ChiaoYenta", "mihomo_yamls"),
+    ("Chipsotrellis", "Proton-VPN-Crack-2026"), ("Chiuhum", "Clash"), ("Chm0kes", "ssclprlist"),
+    ("Chocolate4U", "Iran-v2ray-rules"), ("Chondrinvolubility888", "Privacy-Relay-System"), ("ChrSchu90", "MullvadProxyGateway"),
+    ("Chuhe2399", "Clash.Mihomo"), ("ChunkyPanda29", "ComfyUI-Pollinations-BYOP"), ("Chunlion", "VPS-Optimize"),
+    ("ChurchApps", "LessonsApp"), ("Ciara-Aa", "PROXY-free"), ("Clash-FX", "ClashFX"),
+    ("ClashKingInc", "ClashKingDashboard"), ("ClashKingInc", "clashy.py"), ("Clashsoft", "Clashsoft"),
+    ("Claudiasinusoidal818", "OffensiveSET"), ("ClickDevTech", "CELERITY-panel"), ("CloudTool", "proxy_share"),
+    ("CluvexStudio", "ZedSecure"), ("CobraTechLLC", "Cobra_Tail"), ("CodeLinaro-mirror", "la_platform_external_rust_crates_tracing-subscriber"),
+    ("CodeLinaro-mirror", "qyocto_oss_system_recipes_recipes-ssdk"), ("CodingButter", "snapcap-native"), ("Colin3191", "kiro-proxy"),
+    ("ColinSchmale", "warreport-web"), ("ColorfulChen", "v2rayStartupScript"), ("Competent-genuscanella687", "openclaw-billing-proxy"),
+    ("CoreLinkVPN", "VlessTOP"), ("Correia-jpv", "fucking-awesome-nodejs"), ("Correia-jpv", "fucking-awesome-npm"),
+    ("Coursa4lyfe", "NekoFlare"), ("Cram10", "frmz"), ("CrazyDud", "AnimeSS"),
+    ("Creativveb", "v2configs"), ("Cremattsd", "rnlp-proxy"), ("Crown-Commercial-Service", "conclave-ssso-ui"),
+    ("CrqzyCat", "Spectator_XRAY"), ("CubeCashierCleanse", "NordVPN-License-2026"), ("CyTeknoloji", "VpnServer"),
+    ("D4-project", "passive-ssh"), ("DASOMwithJH", "ssok-api"), ("DASOMwithJH", "ssok-front"),
+    ("DIGYXL", "venom"), ("DJOUD3148", "browser-extension"), ("DLTP", "ModelXray3"),
+    ("DRIII33", "bumble-dates-ssot-portfolio"), ("DSpace24", "stash"), ("DaBao-Lee", "V2RayN-NodeShare"),
+    ("DaPDOG", "ucp-proxy"), ("DaevTech", "Gruxi"), ("DafaSya", "ios-developer-agents"),
+    ("DailySleepy", "SSE-Cloud-Service"), ("Damaonly", "android-worker"), ("Damirex05", "ssims"),
+    ("Daneslack455", "ESP8266-DHT22-SSD1306-OLED-Temperature-Humidity-Monitor-MicroPython-"), ("Danialsamadi", "v2go"), ("Danielduarte3105", "ssfabet"),
+    ("DanybossGDpro", "router-vpn"), ("Daravai1234", "china-dictatorship"), ("Dark675sfdsgfxh", "xray-reality-setup"),
+    ("DarkRoyalty", "shnajder-vpn-configs"), ("Darkelmoov", "goida-vpn-configs"), ("DaveBugg", "PiTun"),
+    ("DavidFerreira21", "ssm-patch"), ("DavidUmunna", "whistlestopcoffee"), ("Davoyan", "xray-routing"),
+    ("DawidMyslak", "n8n-node-mocker"), ("DeKaeyman", "ChunkVeil"), ("Decreasingmonotonic-openendwrench955", "proxy-turn-vk-android"),
+    ("DeepJH", "fuck-sb-qzxy-ad"), ("DeepakMudili", "cf-ssl-check"), ("Delta-Kronecker", "Downloader"),
+    ("Delta-Kronecker", "ProtonVPN-WireGuard-configuration"), ("Delta-Kronecker", "Tor-Bridges-Collector"), ("Delta-Kronecker", "V2ray-Config"),
+    ("Denchic-2009", "xray-checked-configs"), ("Denrox", "ui-apt-mirror"), ("Dev-Akuma", "Balls-Arena"),
+    ("DevRatoJunior", "cc-weixin"), ("DevSaha69", "similar-airbnb"), ("Devolutions", "devolutions-gateway"),
+    ("DiamondTeamOfficial", "v2ray-zitel"), ("Dichgrem", "subhatch"), ("Dicklesworthstone", "rust_proxy"),
+    ("DiegoBessas", "repositorio_teste_ssh_projeto_historia"), ("Dimasssss", "free_telemt_servers"), ("DiningFactory", "panda-vpn-pro"),
+    ("Dinu-orjinl", "v2ray-config"), ("Dipanwita-Mondal", "tunnel"), ("DisplayAdvance", "UrbanVPN-New-Crack-2026"),
+    ("Djabraianserouj", "OpenFOAM13-CHT-Heatsink-kwSST"), ("Djawedc7304", "gea"), ("Dldigisof3283", "copilot-api"),
+    ("Dmg013", "Svg"), ("Dmitriy190424", "instruction"), ("DoBestone", "nexcore-x-ui"),
+    ("DoTBest", "Agent4GCD"), ("Doki-code-22", "Free-Internet-"), ("DomYY", "v2ray.config"),
+    ("DonJone", "proxy-configs"), ("DoomTiger", "MikuBoxForAndroid"), ("DoraOtari", "slipstream"),
+    ("Dororecessed36", "telegram-auto-clone-download"), ("Doryeightsided72", "adblock-rust-manager"), ("DrFarhad2", "v2ray_configs_pools"),
+    ("DrScumManta", "TinyNet"), ("Dragonfly12347", "vpn"), ("DukeMehdi", "FreeList-V2ray-Configs"),
+    ("Durgaa17", "cf-sg-proxies"), ("DustinWin", "dustinwin.github.io"), ("Dwarka-soni-9630", "PFS"),
+    ("Dylan-Emanuel", "cloudflare-bypass-2026"), ("Dzibay", "VPN"), ("E1ruch", "vpnoodles2"),
+    ("EDDY7688", "openvpn-over-icmp"), ("ENAHSIN", "mqttstuff"), ("ENTERPILOT", "GoModel"),
+    ("ETN-Villain", "CoreClashGame"), ("EXE88", "v2ray-config-beautifier"), ("Ealasaidstupid494", "VeilScrape"),
+    ("EasyTier", "EasyTier"), ("Edgar-Kirakosyan", "Clash_Royale_with_GUI"), ("Egor051", "vpnbot"),
+    ("Eibwen", "podcast-proxy"), ("EkkoG", "clash-for-openclash-dist"), ("EkkoG", "clash-meta-alpha-for-openclash"),
+    ("El-Mundos", "2b2t-queue-server"), ("ElixirTeSS", "TeSS"), ("Elkraz", "ccxray"),
+    ("Eloco", "free-proxy-raw"), ("Emir-name", "vpn-sub"), ("Emmanuel66h", "Xray-core"),
+    ("Enderfga", "openclaw-claude-code"), ("Endergon", "NetworkManager-Xray"), ("Endier", "ProxySwitchForMac"),
+    ("EngangAman", "GptCrate"), ("Enri267", "recruiter-crm-proxy"), ("Epodonios", "bulk-xray-v2ray-vless-vmess-...-configs"),
+    ("Epodonios", "bulk-xray-v2ray-vless-vmess-...-configs"), ("Epodonios", "free-proxies"), ("Epodonios", "v2ray-configs"),
+    ("ErTmannobom", "terraform-aws-vpc-peering"), ("ErcinDedeoglu", "proxies"), ("Erenen1", "birdeye-catalyst"),
+    ("ErfanElhamiMokhar", "v2rayConfig"), ("Esethu1974", "sgproxy"), ("EssentialRug", "Proxy-Pac"),
+    ("Estarking57", "Scripts"), ("Evangelinchichi158", "Proxy-Scraper-2026-GUI"), ("Evanston09", "catalyst_clash"),
+    ("Exabyteasiaticbeetle444", "burrow"), ("ExamKim", "CASIOWATCH"), ("Excellenceehoist", "Mullvad-VPN-Premium-2026"),
+    ("ExteriorSerf17", "Linken-Sphere-2-Crack-2026"), ("F0rc3Run", "F0rc3Run"), ("F4RAN", "wolf-pack-watcher"),
+    ("FIRESTRYK", "chatgpt-website.github.io"), ("FLAT447", "v2ray-lists"), ("FLAT447", "v2ray-lists-site-dev"),
+    ("FLAVIO3333", "ProxyForFree"), ("FLEXIY0", "matryoshka-vpn"), ("FSarichev", "XRay"),
+    ("Faateemaa", "SnippetForge"), ("Facilitairinfo", "SlothProxyV2-Public"), ("Fadouse", "clash-threat-intel"),
+    ("FailouN", "WebHub_Desktop"), ("FanchangWang", "clash_config"), ("Far-Horizons-SS14", "Far-Horizons-SS14"),
+    ("Fatherless-costusoil269", "ProxyMod"), ("Fewgenusdendroaspis337", "v2rayN"), ("Fggp09", "mullvad-connection-status"),
+    ("FiligranHQ", "xtm-hub"), ("Filterrr", "AdBlock_Rule_For_Clash"), ("Filterrr", "FlClash"),
+    ("Finntaro", "PrivateClashRule"), ("Firmfox", "Proxify"), ("Fishin09", "GodzillaNodeJsPayload"),
+    ("Flaminiat", "To-do-list-app"), ("Flexvent", "AioProx"), ("Flirexa", "flirexa"),
+    ("FlorinPopaCodes", "aeron-miller-index"), ("FlyNinj", "clash-rules"), ("FoolVPN-ID", "Nautica"),
+    ("For-ACGN", "MIX-Socks"), ("Forceful-gluteusminimus381", "mqttgo_dashboard"), ("ForestSun2023", "Clash-Merge-Script"),
+    ("Foul-plastique636", "CC-Router"), ("FractalizeR", "shadowrocket-configs"), ("Freddd13", "cloudreve-anisub"),
+    ("Freedom-Guard-Builder", "Freedom-Finder"), ("Freesnice", "einsiedler"), ("FrenchToblerone54", "ghostgate"),
+    ("FrostChateau", "Windscribe-VPN-2026-go"), ("FrostyCat", "Shuna-bot"), ("Frozoewn", "S500-RAT-HVNC-HAPP-HIdden-BROWSER-HRDP-REVERSE-PROXY-CRYPTO-MONITOR"),
+    ("FusionSync", "cli-agent-proxy"), ("GAEM150203", "Pr-ctica-5-SS.EE.-e-Inteligencia-Artificial"), ("GD2021", "auto-rule"),
+    ("GFW4Fun", "sing-box-yg-argo-reality-tuic-hysteria"), ("GUDU01", "Avast-SecureLine-VPN-Working"), ("GUI-for-Cores", "GUI.for.Clash"),
+    ("Ganuzaz", "sse-example"), ("Garmask", "SilverRAT-FULL-Source-Code"), ("Garminado", "claude-affinity-proxy"),
+    ("Garmode3073", "zapret-docker"), ("GeneGulanesJr", "Aelvyril"), ("George3d", "OpenAI-Compatible-API-Proxy-for-Z"),
+    ("Gerryoverlooking665", "Blooket-Bot-Flooder"), ("GetAConfig", "GetAConfig"), ("GilvanS", "historico-clash-roayle"),
+    ("GitDev90", "V2ray-Config-Pool"), ("Givonar", "v2rayconfig2xrayjson"), ("Gmsher5817", "domloggerpp-caido"),
+    ("GoCodeAlone", "workflow-plugin-sso"), ("GoGoButters", "VLESS-Checker"), ("Goldentrii", "novada-mcp"),
+    ("Goodygoody-wisp580", "apple-health-analyst"), ("GoogleCloudPlatform", "pgadapter"), ("Gorevadami", "Al-veri-Listesi"),
+    ("GpuLieutenantView", "UrbanVPN-Crack-Latest-2026"), ("Gr00ss", "Gr00ss"), ("Granulationcard598", "backlink-analyzer"),
+    ("Grassmacoun146", "CPA-OPEN"), ("GrenAnHao", "openai-responses-proxy"), ("Grifexdev", "CR-aiogram-bot"),
+    ("GrosTony6970", "MyClash"), ("GustavoAntunes07", "flow-provider"), ("GuyZangi", "clash-residential-proxy-parser"),
+    ("H3mnz", "bug_vpn"), ("H4ckChina", "Clash"), ("HCM-KS25-IT202-CNTT8-Tran-Dinh-Dat", "HCM-KS25-IT202-SS08-Tran-Dinh-Dat-Mini-project"),
+    ("HECTORjoo", "openclaw-windows-hub"), ("HLSSTOURNAMENTS", "PDSB_SS_Ball_Hockey"), ("HSG4338", "springboot-oauth2-sso-example"),
+    ("Hadil-Ben-Abdallah", "Hadil-Ben-Abdallah"), ("Haidzai", "claude-code-proxy"), ("HakurouKen", "free-node"),
+    ("HalTobin", "MoinoSsh"), ("Hamed-Gharghi", "V2Ray-Checker"), ("Hamedzah", "vpn_config"),
+    ("HamoonSoleimani", "Pr0xySh4rk"), ("HankNovic", "ProxyClean"), ("Harinavalona-web", "XWan"),
+    ("Harshitshukla2003", "SSE-Server"), ("Hash-Ag", "libsocks"), ("HatYaz", "GUI_plot_vars_from_SSMI-SAT"),
+    ("Hayao0819", "nm-vpngate"), ("HdBraanker", "ssc12meispierings"), ("HeavenFYouMissed", "neural-xray"),
+    ("HelixDevelopment", "HelixGitpx"), ("HenonBank", "XRAY-config"), ("Henry1001", "xray2"),
+    ("HenryChiao", "MIHOMO_YAMLS"), ("Her0x27", "v2ray.geodats"), ("Hexaproxytech", "proxy-persistence-tester"),
+    ("Hhz0823", "Sb-Panel"), ("Hi-Chuan", "cf-WorkerSub"), ("Hidashimora", "free-vpn-anti-rkn"),
+    ("HikerX", "yunfan_subscribe"), ("Hipjea", "docker-moodle"), ("Hit-Mickey", "clash-for-linux"),
+    ("Hjsosn", "FireWall-Blocks"), ("HoangPhucHieu455", "bai1ss12"), ("HoangPhucHieu455", "bai2ss13"),
+    ("HoangPhucHieu455", "bai3ss13"), ("HoangPhucHieu455", "bai4ss13"), ("Holdkradesignate", "TotalAV-Pro-Activator-Crack"),
+    ("Homas", "vpn007"), ("Hotinosin", "clash-rule"), ("Hsiao05", "ClashMihomo-yaml-editor"),
+    ("HuajiMC6", "Drone_Farm"), ("HuangYurong123", "p-configs"), ("Huauauaa", "dashboard-ssr"),
+    ("Hubaio", "Reverse-Proxy-Soruce-Code"), ("Huibq", "TrojanLinks"), ("HuyRakn", "trojan_worms"),
+    ("I-r-a-j", "proxy"), ("IQKV", "standard-ui-blank-astro-daisyui-ssr"), ("IT202-CNTT8-TranQuangThien", "csdl_thuchanh_ss8"),
+    ("IT202-LeDucAnh08082007-CNTT6", "MiniProject-SS08"), ("IT202-LuongHoangPhuc-CNTT6", "SS08"), ("IT202-NguyenNgocKhang", "Mini_Project_SS08"),
+    ("ITXiaoPang", "v2raypro"), ("Ian-Lusule", "Proxies-GUI"), ("Icy-Senpal", "bypass-all"),
+    ("IcyBlue17", "ClashRule"), ("Idkwhattona", "OpenAI-Compatible-API-Proxy-for-Z"), ("Ilyacom4ik", "free-v2ray-2026"),
+    ("ImBIOS", "relay"), ("Imrannnnn", "ProjectSSchool"), ("Imrexxx-OG", "freelanceflow-backend"),
+    ("IngeniousCrab", "tornado-core"), ("Innerplonote", "Mullvad-VPN-Premium-2026"), ("Intermolecular-sirdar532", "v2node"),
+    ("Iranux", "TopSub"), ("IsaacDSC", "proxy"), ("Isaack-Windtoun", "dom-project"),
+    ("Islamnetz", "gmail-account-creator-bot-pro"), ("ItalyPaleAle", "traefik-forward-auth"), ("Itci1146", "AME_Locomotion"),
+    ("ItzGlace", "MistLink"), ("IvanSolis1989", "Smart-Config-Kit"), ("J-L33T", "vlesstj"),
+    ("JHC000abc", "ProxyParseForSing-box"), ("JJKCursedClashModding", "UE5-Mod-Kit"), ("JJPro", "ClashTemplate"),
+    ("JackLean", "v2ray-config"), ("JacksonJiangxh", "Clash-Rule"), ("Jadelinda81", "export-list-of-instagram-followers"),
+    ("Jadyli", "sanqi_clash_rule"), ("Jaredxh", "AITestPlatform"), ("Jasperuric559", "Supervisor.skill"),
+    ("JavierValdez", "JaviProxy"), ("Jayant2007", "Mimir"), ("Jaymarenad", "aws-api-gateway-tools"),
+    ("Jayysofficial", "redpill"), ("JeBance", "CheburNet"), ("Jeffrey-done", "v2ray"),
+    ("Jeffreycommon553", "HA-Optimizer"), ("JenniferThompson2432455", "Nexus-DeFi-Protocol"), ("JeongJuHwan-jip", "llm-proxy"),
+    ("Jer-y", "copilot-proxy"), ("JerryKik", "ai-subscribe-guide"), ("JessyeKessia", "MessageHub"),
+    ("JesterW365", "Clash_Rulesets_Template"), ("Jeybi-s-Personal-Projects", "pokemon-clash"), ("Jha0rahul", "Business-OpenAPI"),
+    ("Jihad7x", "mie"), ("Jkaotlic", "wg-monitor"), ("JnmHub", "JnmProxy"),
+    ("JodTymeYT", "openai-nim-proxy"), ("JohnnyMercury", "DigiVault"), ("JoistApp", "joist-events-gem"),
+    ("Joker-funland", "V2ray-configs"), ("JonnielPark", "movement_project"), ("Jsnzkpg", "Jsnzkpg"),
+    ("JuanAirala", "freedom"), ("Julesfar710", "heimsense"), ("Juno-Yi", "JunoYi"),
+    ("JustMilkyArt", "VPN-2"), ("JustShuiye", "prevent-DNS-leaks-caused-by-concurrent-DNS-queries-in-the-underlying-Clash-logic"), ("Justinsobased", "rem-community"),
+    ("Juwan-Hwang", "Zephyr"), ("KH4St3H", "PyCFScanner"), ("KIKUMeiZiZi", "clashGZ"),
+    ("KOP-XIAO", "v2ray-vless"), ("KRYYYYYYYYYYYYYYYYYYY", "xray-uuid-checker"), ("Kadowms", "Sakura-Rat-Hvnc-Hidden-Browser-Remote-Administration-Trojan-Bot-Native"),
+    ("KakaanS", "goSSH-CV"), ("Karenfsi188", "xray"), ("KaringX", "clashmi"),
+    ("KaringX", "karing"), ("Karlczernyvaporisation476", "S2A-Manager"), ("Katrinaannija", "ss.lv"),
+    ("Kd-devv", "P-BOX"), ("Keliz271", "Lantern"), ("Kelsibenzoic800", "sshtoolkit"),
+    ("KervynH", "clash-config"), ("Khate-Tire", "CF-IP-Scanner"), ("Khinnainglin441", "All-VPN"),
+    ("Ki4wn", "v2ray-sub-manager"), ("KilimcininKorOglu", "desmos"), ("Kineki07", "tuicr"),
+    ("Kingrane", "vless_test"), ("Kingslywilling46", "ssbu-less-lag"), ("Kiran261101", "dental-xray-ai"),
+    ("Kirillo4ka", "eavevpn-configs"), ("KiryaScript", "white-lists"), ("KiyarashFarahani", "OmegaRay-legacy"),
+    ("KnowSky404", "SubMan"), ("Kotlas23412", "proxy-checker"), ("Kozphy", "Windows-Network-Recovery-Toolkit"),
+    ("KroMiose", "nekro-agent"), ("Kronaxis", "kronaxis-router"), ("Kubenew", "pynx"),
+    ("Kurdeus", "Meli-Action"), ("Kwiatek7", "i8Relay"), ("Kwinshadow", "TelegramV2rayCollector"),
+    ("LI5ee3", "Config"), ("LINMI233", "ClashMetaForAndroid-Updates"), ("LLITiF", "tg-proxy-python-scanner"),
+    ("LPRO-Uvigo-Sinfonie", "ProxyBLENetBatuta"), ("LUXE-STORE", "cfnew"), ("Lakyn80", "xray-manager"),
+    ("LalatinaHub", "Mineral"), ("Lanlan13-14", "zephyr-ssh"), ("Lasertems", "AV-skip-Builder"),
+    ("Latticect", "V2ray-Rules-Dat-SwitchyOmega"), ("Latticect", "clash-rule-set"), ("LaviHost", "proxy"),
+    ("Leavend", "SSO_Kali"), ("Leeeesun", "Fund-Quota-Tracker"), ("LeesHan118", "studyflow_ai_agent"),
+    ("LeftMonster", "rqsession"), ("Lego1997", "mac-proxy-sync"), ("Leon406", "SubCrawler"),
+    ("LeonFH2005", "wireguard"), ("Leonhard333", "foxcloud"), ("Leos573", "node-curl-impersonate"),
+    ("Levisubartesian416", "chines"), ("LewisLui777", "YouTube-Subscriber"), ("LexterS999", "proxy-collector"),
+    ("Lgutier9249", "SNI-XHTTP-V1.1"), ("LiMingda-101212", "Proxy-Pool-Actions"), ("Liameyyy", "turbo-clash---copy"),
+    ("LibrIT", "passhport"), ("LibyX13", "vpns"), ("Likely-kinsman623", "Bitscoper_SSTV_Icecast_Broadcaster"),
+    ("LimeHi", "LimeVPN"), ("LineShogunSlat", "Proton-VPN-Crack-Latest"), ("LinkPrinceLaud", "Windscribe-VPN-2026"),
+    ("LittleRey", "clash-yaml"), ("Liutieshi1234", "25-"), ("Liviastrange489", "easiest-claw"),
+    ("Llama1100", "Service-Mesh-Controller"), ("Lluciocc", "sspm-viewver"), ("Loaila1680", "parse-sse"),
+    ("LoginowArthur", "node-tasks-list"), ("Loischsiy", "server-subscribers"), ("Lokmandev", "codenex-ai-api-proxy"),
+    ("LoneKingCode", "free-proxy-db"), ("LoneKingCode", "panbox"), ("Lonnory", "Exchenged-Client"),
+    ("Lore-Hex", "quill-router"), ("Louie-Lopez", "SSE_Index"), ("Love-AronaPlana", "Automatic-VPN-Aggregation"),
+    ("Lowering-mechanism250", "ns"), ("LuisF-92", "Freedom-V2Ray"), ("LukePham163", "docker-compose-servarr-with-gluetun"),
+    ("Lumimojjav", "Chibi-Clash-Crypto-Game-Token-Api"), ("LustPriest", "proxy"), ("Lutiancheng1", "lingma-ipc-proxy"),
+    ("LynxGeekNYC", "OpenAI-SSH-Project-Editor"), ("LyubomirT", "intense-rp-next"), ("M-Mashreghi", "Free-V2ray-Collector"),
+    ("M-logique", "Proxies"), ("M1nkIokj", "web-ssr-seo"), ("M4YAVI", "proxy-avatar"),
+    ("MAHDI-143", "proxy-checker"), ("MAHMOUD2ABDALLAH", "MAHMOUD2ABDALLAH.github.io"), ("MCC12138", "Clash_Rules"),
+    ("MFSGA", "Chimera"), ("MFSGA", "Chimera_Client"), ("MHSanaei", "3x-ui"),
+    ("MK-aii", "jetbrains-ai-proxy"), ("MR137990", "2026-05-08_praxisprojekt_stm32_mr"), ("MRISOON", "instagram-comments-replies-and-subscribers-scraper-no-cookie"),
+    ("MTDickens", "v2ray-config"), ("MaYBeNTs", "VoidGate"), ("Maaartinnn", "v2rayN-Go"),
+    ("Maha-bub", "Alpha_Clash_Simple_Game"), ("MahanKenway", "Freedom-V2Ray"), ("Mahdi0024", "ProxyCollector"),
+    ("MahdiAshuori", "v2ma.apk"), ("MahsaNetConfigTopic", "config"), ("Majholl", "Majholl"),
+    ("Makale25", "cloudflare-dns-worker"), ("Maklith", "Kitopia"), ("Malvaceaefries86", "NetSniffer"),
+    ("Manans999", "ChromiumManager"), ("Manueleue", "video-audit-platform"), ("Manyan06", "HoneyShield-Intelligent-SSH-Honeypot-IMS"),
+    ("MarEzzat", "SSDP-pipeline-for-Egyptian-Arabic"), ("MarcioCarvalho22", "Sspecial-first"), ("Marek93739", "mega-ssh-udp"),
+    ("Margothermoplastic365", "waterwall-api-gateway"), ("MariusDouahoudeh", "patient-registration-system"), ("Martins-K", "forest_land_scraper"),
+    ("MaskaBOG", "clash-vless-auto"), ("Maskkost93", "kizyak-vpn-4.0"), ("Master-Mind-007", "Auto-Parse-Proxy"),
+    ("MathNodes", "v2ray_configs"), ("Matin413a", "SS"), ("MatinGhanbari", "v2ray-configs"),
+    ("MattCallahan-NOAA", "ak-sst-mhw"), ("Maxierepresentational96", "YaCV"), ("Maximilianna", "RouterClaude"),
+    ("Maximusssr8", "ManusMajorka"), ("MaxineSS", "MaxineSS"), ("Maxiviper117", "dev-proxy"),
+    ("McDaived", "ProxyDaiv"), ("Mcloud136", "v2node"), ("MeALiYeYe", "ProxyConfigFiles"),
+    ("Medium1992", "mihomo-proxy-ros"), ("Mehran1022mm", "vercel-edge-relay"), ("Memooaren7891", "VSoft.AnsiConsole"),
+    ("Mervohex", "Kunchi-Gambling-Keydrop-ClashGG-SkinClub-Predictor-Strategies"), ("MetaCubeX", "meta-rules-dat"), ("Metric265", "proxya"),
+    ("MhdiTaheri", "V2rayCollector"), ("MhdiTaheri", "V2rayCollector_Py"), ("Micaelachesty584", "Citadel"),
+    ("MichalAlgor", "F1Clash_Setup"), ("Michigan5", "oports"), ("Micky203", "zenproxy"),
+    ("Mide-IT", "cdn-ip-ranges"), ("Mihail0v", "sshelf"), ("Mikita-ala", "MARZBAN-SETTINGS"),
+    ("MilanMishutushkin", "tailscale"), ("Minded-nakuru841", "headscale-install"), ("Mirrorby", "group_subscriber"),
+    ("Misaka-blog", "Misaka-V2ray-Sub"), ("MixCoatl-44", "Proxy-Scanner"), ("Mmaduabuchi", "foodboxNG"),
+    ("MoMoZX", "clash2025"), ("MoTech57", "Wire-guard-VPN"), ("Moatasemmofadal", "ssd"),
+    ("Moha-zh11", "codexapp-windows-rebuild"), ("Mohamed-Abdalla-1", "Mohamed-Abdalla-1"), ("Mohamedafifi14", "canban_board"),
+    ("Mohammad-Hossein-Dlt", "kc_vanguard_bot"), ("MohammadBahemmat", "V2ray-Collector"), ("MohammadQS", "QandShekan_Bot"),
+    ("Mohammadgb0078", "IRV2ray"), ("Mohammadtafakori01", "v2rayConfigAsBase64"), ("Mohammedcha", "ProxRipper"),
+    ("MohsenReyhani", "vless-subscriptions"), ("MonadBoxLab", "ClashPseudo"), ("Moocow9m", "tor_entrypoint_list"),
+    ("MortezaAcm", "v2rayConfig"), ("MortezaBashsiz", "CFScanner"), ("MortezaHajilou", "V2Ray-Configs"),
+    ("Mosifree", "-FREE2CONFIG"), ("Mou7s", "spacex-calendar"), ("Mr-Meshky", "vify"),
+    ("Mr-Spect3r", "fad"), ("MrAbolfazlNorouzi", "iran-configs"), ("MrArvand", "FreeRay"),
+    ("MrBeert", "xray-ru-en"), ("MrCronkite", "VPN"), ("MrMarble", "proxy-list"),
+    ("MrNbody16", "TvConfigViewer"), ("MrPooyaX", "V2rayAggregator"), ("MrRedyeah", "DroneAutoControl"),
+    ("MrVPNru", "Auto-setup-VPN-Xray"), ("Mrflatt", "mcp-proxy"), ("Mrnobodysmkn", "Auto-proxy"),
+    ("Mrnobodysmkn", "Beta-Proxy-Lab"), ("Mucose-genusalepisaurus901", "CTF-blog-downloader"), ("Mugassn-Victor", "proxy"),
+    ("Muhammad4822", "freezeauto"), ("MuhammadSubhan0714", "OOPS-PROJECT"), ("MuhammadUnaiz", "export-followers-instagram"),
+    ("MunMunMiao", "headscale-ui"), ("Munachukwuw", "Best-Free-Proxys"), ("Munja9324", "Vpn_Bot_assist"),
+    ("Munna89", "homelab-horizon"), ("MuqtasidBhatti", "mini-ecommerce-frontend"), ("MustafaBaqer", "VestraNet-Nodes"),
+    ("NANDHARAJ5", "ai-access"), ("NEFSC", "READ-SSB-Lee-RFAdataset"), ("NEMNEM07", "XrayVisionWeb"),
+    ("NIKJOO", "Config_Over_SMS"), ("NITI999-sys", "xray"), ("NITI999-sys", "xray_Dashborad"),
+    ("NJMathwig", "qiaomu-markdown-proxy"), ("NNdroid", "kcpvpn"), ("NSLS2", "sst-rsoxs-profile-collection"),
+    ("NZNL31", "Shadowrocket-Ad-DNS-Leak-Rules"), ("NamiraNet", "V2Configs"), ("Nan3r", "v2ray-config"),
+    ("Nancykharbanda", "ssh-tutorial-fr"), ("NavyStack", "ipranges"), ("Nemka-cmd", "proxy"),
+    ("Nemu-x", "privWL-clash"), ("Neo-meme", "the-hero-s-clash"), ("Net-Account", "Config"),
+    ("Netcracker", "qubership-logql-to-logsql-proxy"), ("NextAbyss", "Clash_Config"), ("NgCongKhanh", "xray-ai-web"),
+    ("Nguyenuyen2000", "vlm_demo_xray_iu"), ("NhanSkibidi", "CSDL_BT1_SS13"), ("NhanSkibidi", "CSDL_BT2_SS13"),
+    ("NhanSkibidi", "CSDL_BT3_SS13"), ("NhanSkibidi", "CSDL_BT4_SS13"), ("NhanSkibidi", "CSDL_BTTH_SS13"),
+    ("NiREvil", "vless"), ("NiceVPN123", "NiceVPN"), ("Niekeisha", "business-gemini-pool"),
+    ("Night-stars-1", "Clash_Rule"), ("NiklasBack", "playwright-xray-testimporter"), ("NimbuSHh", "ClashRules"),
+    ("Nnon605246", "singbox_ui"), ("Nonpregnant-loss29", "not-claude-code-emulator"), ("Nopar-3", "clash-config"),
+    ("Nopekszz", "mssh"), ("Nosepythoninae912", "snip"), ("NotSoGoody", "SS_Liner"),
+    ("NovadaLabs", "Novada-proxy"), ("NullAILab", "nullai-trojan-demo"), ("Nullfill", "3x-pannel-and-bot"),
+    ("Oat-Milky-desu", "xray-one-click"), ("Obama907", "theGoillot"), ("Obedbrako", "in-memory-pubsub"),
+    ("Oegi3K", "clash_rule_custom"), ("Ohayo18", "NekoBoxForAndroid"), ("Oliveira3d", "free-ip-stresser-booter"),
+    ("Omid-0x0x0x", "vless"), ("OmniLLM", "omnillm"), ("OnePointOnly", "helios-testnet-network"),
+    ("OneQ1st", "emby-proxy"), ("OneXray", "OneXray"), ("OpenNetCN", "clash"),
+    ("Oran-Honoshi", "cup-clash"), ("Orangels", "claude-code-openai-proxy"), ("OrbisProxy", "proxy"),
+    ("OrionPotter", "free-proxy"), ("Orthostatic-cassava481", "crypto-security-toolkit"), ("Osivpn", "v2ray-configs"),
+    ("Otaka", "InputProxy"), ("OxiBelt", "OxiBelt"), ("PAIREN1383", "GVCA"),
+    ("PAOVPN", "PAO-TM-VPN"), ("PAPA-B0T", "PROXY_CHROME"), ("PaPerseller", "chn-iplist"),
+    ("Panini235", "update-v2ray-config-from-dynamodb"), ("Paorwm", "Batch-Downloader-Crypter-FUD-UAC-Bypass"), ("Paorwm", "Batch-Malware-Builder-FUD-Crypter-AV-UAC-Bypass"),
+    ("ParrotXray", "ParrotXray"), ("Parth3199", "10ssoonBase"), ("Pashgen", "mikrotik-3xui-vpn"),
+    ("Pasimand", "v2ray-config-agg"), ("Passimx", "vpn-payments"), ("PatNei", "esport-ics"),
+    ("PatilSoham25", "SSLE"), ("Paul236", "node-utils-1771917038-1"), ("PaulTrampert", "PTrampert.ApiProxy"),
+    ("PavelLizunov", "VPNRouter"), ("Pawdroid", "Free-V2Ray"), ("Pawdroid", "Free-servers"),
+    ("Paxxs", "clash-skk"), ("Peppeppa", "2_ss26_prog2_maven"), ("Peter1119", "troxy"),
+    ("Phamtuandat", "responses-proxy"), ("Phillippcarboniferous312", "My-Brain-Is-Full-Crew"), ("PhoenixNil", "XrayUI-dev"),
+    ("Phogapro", "cloud-phone-config"), ("PhotoAtomic", "ai-router-net"), ("Phylirui", "rule"),
+    ("PinguuSS", "PinguuSS"), ("PixelCatICU", "pixelCat-blog"), ("PodoroznikVPN", "PodoroznikVPN_bot"),
+    ("Pogozhev", "Vpnland"), ("Pomelo520", "Clash-Mi"), ("Potterli20", "go-shadowsocks2"),
+    ("Potterli20", "hosts"), ("Potterli20", "trojan-go-fork"), ("PrabashSapkota", "proxyformywebsite"),
+    ("Prasadchelated435", "windows-telegram-bot"), ("Preethamvarma007", "privacy-first-network"), ("PrinceVSFX", "V2Ray-Configs"),
+    ("PrintNow", "clash-config-store"), ("Pritz96", "sosa-ssn-ontology-editors-edition-subclass-diagram"), ("Pro4G", "v2rayN_Windows-10"),
+    ("ProgrammerLiSichen", "mental-icd-cn"), ("Project-V", "ProjectV"), ("ProxyScraper", "ProxyScraper"),
+    ("Prudexxx", "ssylka"), ("PsenZ", "veyraquant"), ("Psikuvit", "CashClash"),
+    ("Ptechgithub", "sing-box"), ("Pu-gong-ying", "clash"), ("PuddinCat", "BestClash"),
+    ("PuppetMstr", "stcky-mcp-sse"), ("Pxys-io", "DailyProxyList"), ("Pxys-io", "proxylistdaily"),
+    ("Q7DF1", "XrayFA"), ("QZero233", "generateV2rayConfig"), ("QieSen", "ConfigTemplateForClash"),
+    ("Qing060325", "Hades"), ("Qing060325", "Hyperion"), ("QiuSimons", "YAOF"),
+    ("Quesocrema983", "CodeFreeMax"), ("QuixoticHeart", "rule-set"), ("R-the-coder", "V2ray-configs"),
+    ("R0mb0", "LexiClash_Street_Edition"), ("R3ZARAHIMI", "tg-v2ray-configs-every2h"), ("REIJI007", "AdBlock_Rule_For_Clash"),
+    ("REVERSEDCD", "jobspy-api"), ("RKPchannel", "RKP_bypass_configs"), ("RPSandyGaming", "awesome-terminal-for-ai"),
+    ("RSSaltea", "DL-Clashfinder"), ("Racc2006", "RealityGhost"), ("Raffyn2", "python-api-base"),
+    ("RagdollClash", "RagdollClash"), ("Raheem39", "cloudflare-tools"), ("RaiconY", "claude-code-statusline"),
+    ("RainMeriloo", "cf-browser-cdp"), ("Rainbow609", "deputy"), ("RaineMtF", "v2rayse"),
+    ("RamazanKara", "vmod-wasm"), ("RannyayaAnastasia", "Device-mapper-proxy"), ("RasputinofThrace", "VerDix"),
+    ("RayanEmad634", "ClassroomPoll_RayanEmad_AbdallahTarek_AdvProject12"), ("Re0XIAOPA", "AutoScrapeFreeNodes"), ("Re0XIAOPA", "ToolStore"),
+    ("RealCuf", "VCG-Script"), ("RealDefenderSqueeze", "Hamachi-Pro-Crack-Windows-2026"), ("RealFascinated", "PIA-Servers"),
+    ("Recedi", "deepseek-tilda-proxy"), ("Reckless312", "ExamSSVV-TakeHome"), ("RedHatInsights", "uhc-auth-proxy"),
+    ("Reid-Vin", "OpenClash_Custom_Rules_for_ios_rule_script"), ("ReliablyObserve", "Loki-VL-proxy"), ("Remyix123", "PiHole-Cloud-Wireguard-VPN-Orchestrator"),
+    ("Resetand", "vpn-control-panel"), ("ReyterAK", "vmess"), ("Rhodawagnerian446", "docker-wireguard"),
+    ("Rhymer-Lcy", "dify-k8s"), ("Richard2222224", "sslvrssbot"), ("RichardMoor75", "dostup_vpn"),
+    ("Rimaglottidisspacewalk319", "claude-meter"), ("RioMMO", "ProxyFree"), ("Rishichauhan67", "OnlineResalemarketplace"),
+    ("Rislinstiligo23", "sss"), ("Rithvik1124", "SensiShieldProxy"), ("RitzgaleTuico", "Tuico-Ritzgale-E"),
+    ("Rm6B", "Best_free_news_api"), ("Robbynjazzy512", "opencode-local-provider"), ("Roberto7771", "sso-ui-cdn"),
+    ("Robin1128", "VPN"), ("Rodin-Anatoliy", "hiddify-bot"), ("Rohgholi84", "My-v2ray-panel"),
+    ("Rohit-Virkar", "DDoSSCAN"), ("Roldas06", "ClashOfDungeons"), ("RollyPdev", "suc-hei-philippines-schools-api"),
+    ("Roop81", "Interlink-Multi-Bot"), ("RostislavKis", "4eburNet"), ("Roywaller", "update-clash"),
+    ("Rr3511167", "snix"), ("Ruk1ng001", "freeSub"), ("Rusl2023", "vpn-alive-check"),
+    ("Rutherforddry602", "sha2-ecdsa"), ("RutvikGupta", "dad-bot"), ("Ryan-PG", "ry-v2ray-config-extractor"),
+    ("Ryucmd", "mihomo-rule"), ("S13LEDION", "idea-reality-mcp"), ("S8Y", "mullvad-pac"),
+    ("SAILFISH-PTE-LTD", "MetroVPN-Windows"), ("SAMURAI-007", "V2ray-shop-bot"), ("SANTOSHPATIL2004", "Telegram-Proxy"),
+    ("SAQLAINComsats", "the-watcher-ssr"), ("SEC-API-io", "sec-api-node"), ("SGPLTD", "SSOW-SignOff"),
+    ("SHADOWWINGZ69", "ECH-CF"), ("SHAHBBBB", "V2ray-collector"), ("SPARTAN2006", "is-in-ssh"),
+    ("SPIRITUFA", "Mihomo-Auto-VLESS-Reality-Updater"), ("SQMUSIC", "ss"), ("SSEconomics", "SSEconomics"),
+    ("SSGSir", "SSGS-zararl--IPs"), ("SSK015", "SSK015"), ("SSMG4", "SSR"),
+    ("SSSMC-web", "schedule.sssmc"), ("SSSSGGAAMMIINNGG", "devcontainer"), ("SSVM2027", "ssvm2027.github.io"),
+    ("SSWConsulting", "SSW.Rules.Content.Test.JB"), ("Sabariranil", "nashvpn"), ("SachlavAgent", "clickup-auth-proxy"),
+    ("SaharSaam", "juziyun"), ("Sajjad-Taghinezhad", "v2checker"), ("Saka2e", "AzadiHub"),
+    ("SakuraPuare", "Hive"), ("SaloniSS", "SaloniSS"), ("SaltyMonkey", "justclash"),
+    ("Sama-Pro", "xray_ai"), ("SamanGho", "v2ray_collector"), ("Sami4387", "TBot"),
+    ("Samuray49", "awesome-ai-agent-testing"), ("Sanjai451", "SubscriptionManager"), ("Sanji-code-10", "Klokai-mega-DX"),
+    ("SantiSouto", "CVV-checkers"), ("Sarthaknagne17", "laravel-ai-mapper"), ("SazErenos", "NekoBox"),
+    ("Scarecrowish-shoat5968", "ByeByeVPN"), ("Scoreverb70", "NekoCheck"), ("Scully34", "sscoe-dashboard"),
+    ("Sean-Vibes", "NYSvibes_news_SS"), ("SeanXuCn", "ClashVergeTrafficLedger"), ("Seantee9163", "money-news-station"),
+    ("Seby26Dev", "SSS_WEB"), ("Secondary-offer942", "hamid-mahdavi-client"), ("Seeh-Saah", "awesome-free-proxy-list"),
+    ("SeizeSummonerTouch", "Kaspersky-Premium-2026"), ("Semenhach1", "vpnserver"), ("SentientSwarm", "agent-locksmith"),
+    ("SentientSwarm", "layer8-proxy"), ("Sepideh0", "V2ray-Configs-Iphone"), ("Sequen0", "ssd-dispatch-tracker"),
+    ("Sereinfy", "Clash"), ("SevenworksDev", "proxy-list"), ("Shadow1086", "javaSSMstudy"),
+    ("ShadowException", "VPN"), ("ShadowWhisperer", "BlockLists"), ("ShanGor", "Bifrost-Bridge"),
+    ("ShapeRepresentative", "Error-0x80072ee7-Solutions-Windows"), ("ShatakVPN", "ConfigForge-V2Ray"), ("Shayanthn", "V2ray-Tester-Pro"),
+    ("Shazada0070", "nfqws2-keenetic"), ("Shchh774329", "v2rayn"), ("SherlockChiang", "Maodie-Launcher"),
+    ("SherlyKinan", "proxy-check"), ("Shiovann2991", "ProtoCMiner"), ("ShiroRikka", "Clash.Meta-Script"),
+    ("Shivam3Baghel", "SSBThe-Web-Developer-Bootcamp"), ("Shjpr9", "Subs"), ("Shoolife", "ToBeVPN-Android"),
+    ("Shoolife", "ToBeVPN-Desktop"), ("Shootp5044", "gemini-mac-pilot"), ("Shreyash0895", "Freelancer-Web-App"),
+    ("Shun234434334343", "supercli"), ("SiYaHP0sH", "vless"), ("Sibusiso6", "proxy-list"),
+    ("SiddanthEmani", "kyros"), ("Sidoah2", "ProxyCar"), ("SigmaDCY", "HitokotoProxy"),
+    ("Sihabho2566", "SeansLifeArchive_Images_Clash-of-Clans_Y2026"), ("Siiingularity", "ClashOfMinds"), ("Silentely", "AdBlock-Acceleration"),
+    ("Silvester13-SOS", "clash-war-analytics"), ("Sinaksh0", "Warp-config"), ("SinorDev", "OV-Refiner"),
+    ("Siva1327", "CF-Workers-BPSUB"), ("Skiba111", "homebrew-shield"), ("Skiba111", "shield-vpn-desktop"),
+    ("SkillSnap-Learning", "ss3"), ("Skillter", "ProxyGather"), ("Skipaev", "VLESS-Extractor"),
+    ("SkitterDsg", "ThatsAppMQTTDebugger"), ("SkyHorizon3", "SSE-Dynamic-String-Distributor"), ("Skyscraperfoxhound619", "markdown-ui-dsl"),
+    ("SkzfXrolo", "AsperSS"), ("SnapdragonLee", "SystemProxy"), ("SniperGoal", "mac-media-stack-advanced"),
+    ("Snippy07", "vless"), ("Snishil", "Fisch-Script"), ("SnowmanNunu", "mask-cn"),
+    ("Snuffy2", "sshwifty"), ("SoapyRED", "n8n-nodes-freightutils"), ("Sodlex4", "trojans-rugby-hub"),
+    ("Soju06", "codex-lb"), ("SoliSpirit", "SolVPN"), ("SoliSpirit", "mtproto"),
+    ("SoliSpirit", "proxy-list"), ("SoliSpirit", "v2ray-configs"), ("Soraya", "clash-rules"),
+    ("Sorosh2003", "Chat-App-"), ("SoroushImanian", "BlackKnight"), ("Soroushbolbolabady", "FreeInternet"),
+    ("Sowevo", "subconverter"), ("Spellinfo", "sstop"), ("Spittingjiu", "mihomo-generic-template"),
+    ("Splitkraedge", "Windscribe-VPN-2026-ts"), ("Sploo-Scripts", "TheWiz-PS5-Easy-FFpkg-Maker"), ("Spotas", "Ai-rewrite"),
+    ("SprkFade", "sstv-iptv"), ("Sprokitz", "all-deploy"), ("SriSathyaSaiVidyaVahini", "SSSVV-landing"),
+    ("StarsInDmajor", "tavily-proxy"), ("StellarStar255", "stellar_smart_terminal"), ("Stepan2222000", "clash-rulesets"),
+    ("Stevens0417", "SSIM-V2"), ("Stipool", "npvtuijian"), ("StressOzz", "StressKVN"),
+    ("SukrithTripathii", "ThreadPoolExecChain"), ("Super-Sauna-Club", "sscsaunalogger"), ("SuperInstance", "event-bus"),
+    ("SuperNG6", "clash-ruleset"), ("Supernova-Labs-Org", "spooky"), ("Suraj24w", "backlink-analyzer"),
+    ("Surfboardv2ray", "Config-Multiplier"), ("Surfboardv2ray", "Proxy-sorter"), ("Surfboardv2ray", "TGParse"),
+    ("Surfboardv2ray", "TGProto"), ("Surfboardv2ray", "Trojan-worker"), ("Surfboardv2ray", "replit-argo"),
+    ("Surfboardv2ray", "test-psi"), ("Surfboardv2ray", "v2ray-refiner"), ("Swift-tunnel", "swifttunnel-app"),
+    ("Szan203", "panda-vpn-pro"), ("T3stAcc", "V2Ray"), ("TG-NAV", "clashnode"),
+    ("TG-NAV", "nodeshare"), ("THEzombiePL", "Anti-VPN-List"), ("TOMIBABY", "freevpn"),
+    ("TakgoAgency", "scrape-data-from-instagram"), ("Tanakorn-Pichai", "xray"), ("TaoEiEi", "xray-system"),
+    ("TarekBN", "luci-app-ech-workers"), ("Taxi88", "ant-and-apples"), ("Taylor-cheater", "free-coding-models"),
+    ("TechSpiritSS", "TechSpiritSS"), ("TeeSQL", "teesql-data-sidecar"), ("Telegram-FZ-LLC", "Telegram-Proxy"),
+    ("TellerPiazza", "UrbanVPN-Crack-2026"), ("Tenejakin", "sound-clash"), ("Teodoorpenal672", "baiqi-GhostReg"),
+    ("Tesfay-Hagos", "continual-ssl-medical-segmentation"), ("ThaminduDisnaZ", "Esena-News-Github-Bot"), ("ThandarLin2026", "v2ray-topup"),
+    ("TheAirBlow", "Turnable"), ("TheCrowCreature", "v2rayExtractor"), ("TheFlipper-spec", "VPNMY"),
+    ("TheHotCodes", "HotVpn"), ("TheKhushant", "EnquryFormSS"), ("TheLunarCompany", "proxy-helm-chart"),
+    ("TheSpeedX", "PROXY-List"), ("TheWeddingoff", "Abdalrhman-Nada"), ("Therealwh", "MTPproxyLIST"),
+    ("Thiago12097", "gluetun-webui"), ("ThinkWatchProject", "ThinkWatch"), ("Thirddegreegrocery830", "xr"),
+    ("ThomaKust", "ai-proxy"), ("ThomasCrawley-105332287", "ClownSS_AppliedWebProject_Part2"), ("ThongLuc2k3", "Prompt-Guided-XRay-Segmentation"),
+    ("Thor-jelly", "proxy"), ("Thordata", "awesome-free-proxy-list"), ("Thunderous-cauliflower413", "DeSSyPHER"),
+    ("Thuongquanggg", "Proxy"), ("ThyArt-IsMurder", "Proxy-Test"), ("TiagoParente32", "open-proxy"),
+    ("Tieazide1959", "DNSly"), ("TinkerHost", "upptime-free-hosting-central-servers"), ("TinyGhost", "planet-clash-ads"),
+    ("TochkaIco", "SSIS-Togethernet-events"), ("TochkaIco", "Sumo-Robot-SSIS-Year-1-"), ("Tod-weenieroast366", "coding-plan-mask"),
+    ("TogawaSakiko363", "ipv6-pool-proxy"), ("Tom-Riddle09", "proxy_server"), ("Toothylol", "Kiro2api-Node"),
+    ("TopChina", "proxy-list"), ("Toperlock", "sing-box-geosite"), ("TraceDesigns", "MegaETH-Faucet"),
+    ("Travis0234", "FlowerCloud-"), ("Treetippakae", "instagram-data-scraper"), ("Trillion-pinkandwhiteeverlasting354", "MyDVLD"),
+    ("TrinsyCa", "ProtonVPN-Game-Excluder"), ("Trivexbbn", "Frp-Quick-Configuration-Panel"), ("Trivexion", "AsteriskPassword-Viewer"),
+    ("Trueaminm", "Majholl"), ("Tu214", "ss13_BTVN03_csdl"), ("Tu214", "ss13_btth_csdl"),
+    ("Tu214", "ss13_btvn01_CSDL"), ("Tu214", "ss13_btvn02_csdl"), ("Tu214", "ss13_btvn04_csdl"),
+    ("Tu214", "ss13_mindmap_csdl"), ("TuanMinPay", "live-proxy"), ("Tuchit893", "social-fixed-ip-guide"),
+    ("Tusked", "IPcheck-workers"), ("Tutevinho", "claude-nvidia-proxy"), ("TwilgateLabs", "inhive-rules"),
+    ("TyRoden", "serverless_proxy"), ("Tyguy9", "VPN-Filter"), ("Tym-RS", "ASCII-Clash_mk2"),
+    ("TzuChaeDahy", "bank_account_subscriber"), ("UMVERTH", "ssz-lensing"), ("USNOCTURNE90", "Clash"),
+    ("UVA-Course-Explorer", "course-data"), ("Ultimate-Hosts-Blacklist", "SSH_attackers_probers"), ("Unified-rosinbag197", "gh-relay"),
+    ("Unopposable-starting193", "chatgpt-bridge"), ("Upellift99", "ovispect"), ("UplandJacob", "Upland-HA-Addons"),
+    ("Uryzen317", "V2ray-subscription-to-json"), ("Use4Free", "breakfree"), ("V1ck3s", "octo-fiesta"),
+    ("V2RAYCONFIGSPOOL", "SLIPNET_SUB"), ("V2RAYCONFIGSPOOL", "TELEGRAM_PROXY_SUB"), ("V2RAYCONFIGSPOOL", "V2RAY_SUB"),
+    ("V2RayRoot", "V2RayConfig"), ("V2RayRoot", "V2Root-ConfigPilot"), ("V2rayking", "V2rayking"),
+    ("VAL41K", "bypass-rkn-blocks"), ("VGLive", "ss"), ("VLjnh-New", "Proxyscan"),
+    ("VOID-Anonymity", "V.O.I.D-VPN_Bypass"), ("VP01596", "vless-top15"), ("VPNclient", "VPNclient-app"),
+    ("VPSDance", "ai-proxy-rules"), ("VPSLabCloud", "VPSLab-Free-Proxy-List"), ("VQIVS", "MarzbanBot"),
+    ("VRESHETN", "-H-SSolutions-OrgChart"), ("Vadim287", "free-proxy"), ("Valentin6595", "WhatDreamsCost-ComfyUI"),
+    ("VampXDH", "MyProxy"), ("Vanic24", "VPN"), ("Vann-Dev", "proxy-list"),
+    ("Veid09", "vless-list"), ("Vepashka94", "vpngate-mirror"), ("Vepashka94", "vpngate_web"),
+    ("Vergorini12", "simple-todo-list-mern"), ("VersaVin", "CF-Workers-UsagePanel"), ("VestobVeyn", "Proxy-HTTP-SOCKS-Get-Pool"),
+    ("VetriTheRetri", "ssb-decomp-re"), ("Vheissu", "captura"), ("ViaVersionAddons", "ViaProxyRakNetProviders"),
+    ("VictorMaxWang", "childcare-smart"), ("Vinaykumar023", "pub_wake_lxc"), ("Vincentkeio", "probe-nodes-list"),
+    ("Vinfall", "VNDB-Calendar"), ("VishnuDeepak213", "SSD"), ("Volunteer-Technology-Club", "Pipe"),
+    ("VoroninaYanina", "free-nodes"), ("Vortalitys", "PrivHunterAI-detects-access-vulnerabilities"), ("VovaplusEXP", "p-configs"),
+    ("WLget", "V2Ray_configs_64"), ("WLget", "V2ray_free"), ("WOLFIEEEE", "scrape"),
+    ("WP2-Danikusuma", "AgentX"), ("WSU-Carbon-Lab", "xray-atlas"), ("WZB1320", "A-Shares-ResearchV2.0"),
+    ("WalrusCollar", "anime-card-clash-ov79"), ("Wassay380", "NaiveProxy"), ("WaterdogPE", "WaterdogPE"),
+    ("Watfaq", "clash-rs"), ("Wertazz", "gridfall"), ("Wheelernormandy677", "CF-IP-Scanner"),
+    ("WhoJave", "ExternalConfig"), ("WhoisNeon", "Config-To-QrCode"), ("Wildhoney", "Chizu"),
+    ("WillyMS21", "Cloudflare-Bybass-CDP-Chromium"), ("Wind7077", "yml-vless"), ("WolfSahil", "Win32kHooker"),
+    ("Wwuyi123", "CF-Proxyip"), ("Wyr-Hub", "WyrVPN-Lite"), ("X2X13211", "FREE-MTProto-Proxy-For-Telegram"),
+    ("X4BNet", "lists_torexit"), ("X4BNet", "lists_vpn"), ("XIXV2RAY", "XIX-v2ray"),
+    ("XKUNX", "AnyinVPN"), ("XTLS", "Xray-core"), ("XTLS", "Xray-docs-next"),
+    ("XXX5X", "iptables"), ("XiaoTong6666", "nonebot-plugin-chatgpt_web"), ("XigmaDev", "cf2tg"),
+    ("XigmaDev", "proxy"), ("Xiuyixx", "vless-encryption-onekey"), ("Xnuvers007", "free-proxy"),
+    ("Xray-core", "Xray-core"), ("XxX9Void9XxX", "sspv2site"), ("YFTree", "ClashNodes"),
+    ("YG-Blue", "v2ray-subscription"), ("YUTING0907", "SubscribePapers"), ("YY-China", "Clash"),
+    ("YaltaVPN", "YaltaVPNConfigs"), ("Yam3DLife", "vpn-subscriptions"), ("Yan233th", "sub2nodes"),
+    ("YangLang116", "auto_gen"), ("YashMayanil", "WanderLust-Airbnb-Clone"), ("Yassir8888", "trading-bot-proxy"),
+    ("YavieAzka", "clash-tabola-bale"), ("YawStar", "Proxy-Hunter"), ("Yeashu", "AI-Proxy-Server"),
+    ("YeonSeong-Lee", "sseuregi-king"), ("Yikai-Liao", "v2ray-reverse-bridge-guide"), ("YimitKEQ", "TFTClash"),
+    ("Yo0l0", "ssss"), ("YouKap", "alpxrm"), ("YourAverageSimbaFan", "node-boot-test-framework"),
+    ("Ysj1155", "ssd-mini-lab"), ("Ysurac", "openmptcprouter"), ("Yularzhi", "geosite_russia"),
+    ("Yuriy7788", "bitter-voice-3m7ydf_my-proxy"), ("YuryRafa", "session-based-finance-api"), ("ZHDeveloper", "clash-nodes"),
+    ("ZJ-zhangcn", "clash-rules"), ("ZORfree", "proxy_pool"), ("ZSJJessey", "-SpringBoot-Vue-"),
+    ("Zaeem20", "FREE_PROXIES_LIST"), ("Zaeem20", "FREE_V2RAY_CONFIGS"), ("Zangadze1101", "Convert"),
+    ("ZanzyTHEbar", "pangolin-client-container"), ("Zebraar", "AirClash"), ("Zephyr236", "proxy_collector"),
+    ("Zero-Bug-Freinds", "ai-api-usage-monitor"), ("ZeroDeng01", "sublinkPro"), ("Zhihong0321", "oauth-vpn"),
+    ("ZhurinDanil", "clash-sub"), ("ZintbbKos", "Youtube-Like-Comment-Subs-View"), ("Zohuko71", "ferrox"),
+    ("Zover1337", "vless-free-whtielist"), ("ZvonimirSun", "clash-rules"), ("Zzz-IT", "GoclashZ"),
+    ("a-m-elshrabrawi", "Freezery"), ("a19026200244-ship-it", "polyworks_project"), ("aa-proxy", "aa-proxy-rs"),
+    ("aaaaaaaaabwww", "mux-swarm"), ("aalligithub", "automated-v2ray-manger"), ("aarnav-kembhavi", "TROJAN-ANALYSIS"),
+    ("aaron4605", "context-optimizer"), ("aaronblanco", "SSBW"), ("ab6357020", "Free"),
+    ("abdallahLokmene", "teamclaude"), ("abdul841434", "telegram-gpt-template"), ("abdullah14120", "vpn"),
+    ("abhayforsure", "ai-wechat-api"), ("abidi556", "doge-code"), ("abrar699979", "Fortnite-Mobile-SSL-Bypass"),
+    ("absolutethresholdhsvii920", "mpp-proxy"), ("abueyad2017", "railway-vless-vpn"), ("abueyad2017", "trojan-railway"),
+    ("abusaeeidx", "TazaProxy-Troxy"), ("abxian", "proxy"), ("acquainted-marsh585", "BackupX"),
+    ("acymz", "AutoVPN"), ("ad1239g", "token-saver"), ("adan202", "Abelssoft-SSD-Fresh-Latest-Patch"),
+    ("adaskitkleilrociftey", "solidity-proxy-upgrade"), ("adesh777", "axios"), ("adeshra5646", "VLESS-XTLS-Reality-VPN"),
+    ("aditya123-coder", "GoatsPass"), ("adop1344-bot", "LetoVPN_free"), ("adsikramlink", "proxy"),
+    ("aekozhevnikov", "3proxy-ui"), ("aemr3", "tmux-wireguard-switcher"), ("afr0700", "ProxyList"),
+    ("africamonkey", "HttpRelay"), ("agentgateway", "agentgateway"), ("agustim", "llamp"),
+    ("ahMADASSadi", "We2Ray"), ("ahlembnhsn", "An0m0s-VPN"), ("ahmedhelala", "xuruowei-forever"),
+    ("ahmedmagdy0000", "NORD"), ("ahmedzaik", "Pi-Hole-Setup"), ("aiboboxx", "v2rayfree"),
+    ("airhorns", "shopify-draft-proxy"), ("aisystant", "ssm2025"), ("ajaycarlos", "JioBypass"),
+    ("ajaysharma1258", "sshmx"), ("akarezi", "V2auto"), ("akbarali123A", "proxy_scraper"),
+    ("akshay26-ui", "RishiSphere"), ("akshaymishra78600", "proxy-gem"), ("alaqsastore2023-creator", "binance-futures-proxy"),
+    ("alberti12345", "pfopn-convert"), ("aldebaran1805", "EtchDNS"), ("aleatorio600", "backlink-tracking-software"),
+    ("aleskxyz", "reality-ezpz"), ("alessiobacin", "llmProxy"), ("alexanderersej", "fanqiang"),
+    ("alexblessq", "free-vpn-subscription-for-happ"), ("alexey83rus83-creator", "ssk"), ("alexxyjiang", "v2ray-config-public"),
+    ("alfianapriansyadp", "logging-monitoring"), ("ali13788731", "proxy"), ("ali13788731", "vpn"),
+    ("aliasgharfathikhah", "v2rayse"), ("aliceasiddiq", "java-blockchain-core-system"), ("alighafoori", "yt-to-rubika"),
+    ("alihusains", "sstp-vpn"), ("alimalik122", "chest-xray-covid19-classification"), ("alireza-rezaee", "tor-nodes"),
+    ("alireza-rou13", "daily-config-backend"), ("alisadeghiaghili", "v2ray-finder"), ("alixblae550", "SecureTunnel"),
+    ("allanjoshuaf", "singbox-configs"), ("allin75", "clash-private-rules"), ("almeidapaulopt", "tsdproxy"),
+    ("aloramiaa", "Vpngate"), ("alpgul", "cloudflare-stealth"), ("alphaa1111", "proxyscraper"),
+    ("altyhydyrov", "https-github.com-altyhydyrov-Also-"), ("alyx404", "rule-providers"), ("am-miracle", "ferrum-proxy"),
+    ("amanraj76105", "EasyProxiesV2"), ("amaze1111", "TrioClash"), ("amclubs", "am-cf-tunnel"),
+    ("amdevelopment-scripts", "my-sveltekit-template"), ("amir1376", "v2raychecker"), ("amirali098-sys", "v2ray-sub"),
+    ("amirebni", "con"), ("amirebni", "proxy-collector-b"), ("amirhoseinhoseinnezhad1384-max", "mybot"),
+    ("amirhosseinesmaeilnejadtanha-cloud", "vpn-"), ("amirhosseinqaderifar-cell", "Amirkingtap1"), ("amirkma", "proxykma"),
+    ("amirrezaalavi", "XrayConfigTester"), ("amirwolf5122", "MasterHttpRelayVPN"), ("amirwolf512k", "MasterHttpRelayVPN"),
+    ("amnezia-vpn", "amnezia-client"), ("amosproj", "amos2026ss02-automated-thematic-analysis"), ("amuck-tie267", "SNI-XHTTP"),
+    ("anaer", "Sub"), ("analystrusso", "sso-project"), ("anandb7", "Distributed-pubsub"),
+    ("anatolykoptev", "oxpulse-partner-edge"), ("anayadora-100rit", "CyberGhost-VPN-2026"), ("ancf-hue", "ancf-hue.github.io"),
+    ("ancwrd1", "snx-rs"), ("andersonssilva2", "Task-Tracker-API"), ("andigwandi", "free-proxy"),
+    ("andre-zhang", "clasher"), ("andreabranca", "Telegram-Downloader-Tools"), ("andreasvesaliusfringedpolygala893", "codex-manager"),
+    ("andrew-zyf", "clash-override-chain-proxy"), ("andrewgunkel", "todoroki"), ("andrewheberle", "serverless-ssh-ca"),
+    ("anfeng-crystal", "proxy-rules-dist"), ("anggakhrsma", "clashmate"), ("anghuw", "Trend-Prediction-Agent"),
+    ("angr6908", "MEGA-DL"), ("angr6908", "docker-sing-box"), ("angular", "angular-ssr-builds"),
+    ("animoofps", "txt-to-proxify"), ("aniyan-chekkan", "Proxy-Grabber-v2.4.5"), ("ankitgupta2107", "Reverse-Proxy-Soruce-Code"),
+    ("anniet5664", "webclaw-tls"), ("anooshali201", "CryptoLens"), ("ansh826-alt", "ant-vpn"),
+    ("antivpn-7", "Vpn"), ("antoinenry", "SSB-Interactive"), ("anutmagang", "Free-HighQuality-Proxy-Socks"),
+    ("anytlsd", "fw_rules"), ("apify", "crawlee"), ("apindipsi22", "Securing-SSH-Access-on-Proxmox-VE-9"),
+    ("apippp11", "automatic-backlink-indexer"), ("apolloadam31415926", "v2ray_config"), ("apostoltudor", "SSI"),
+    ("appfanqiang", "appfanqiang.github.io"), ("appium", "appium-ios-remotexpc"), ("appleboy", "drone-ssh"),
+    ("apt-gh", "pantheon"), ("ar4kiara", "proxy"), ("aradhyagithub", "FLJopen"),
+    ("arandomguyhere", "Proxy-Hound"), ("arasongiyvymjlndejkkhcbay", "evm-storage-layout-analyzer"), ("ardaj-ops", "game_quantu-clash"),
+    ("arfahmahmud", "codex-context-editor-proxy"), ("arfoux", "clash-rule-providers"), ("arkaih", "VPS_BOT_X"),
+    ("armanridho", "ProxyJson-toYaml"), ("armoralbatrossstir", "Opera-VPN-Windows-2026"), ("arrnalireza", "automatic-v2ray-tester"),
+    ("arseniy700", "MSC-VPN"), ("arseniy700", "vpn-sub"), ("arshiacomplus", "v2rayExtractor"),
+    ("arshveer1208", "ssh-brute-force-splunk"), ("arsph", "VPN-Check-Status"), ("artem-builds", "proxy-hub"),
+    ("artemagapitov5-lang", "subscribers"), ("artoiscaplan", "Python-Blockchain-Engineering-Kit"), ("arunsakthivel96", "proxyBEE"),
+    ("asaf1n", "EGISZ-Proxy-Reports-Airflow"), ("asakura42", "vss"), ("asgharkapk", "Sub-Config-Extractor"),
+    ("ashahdevs", "v2ray"), ("ashmilahammed", "code-clash"), ("askalf", "dario"),
+    ("asta-spb", "vpn_link_extractor"), ("astlinux-project", "astlinux"), ("atajanofficila", "vpn-server-list"),
+    ("atgko", "ssbu-portfolio"), ("atomhb", "Auto_Update_Sub"), ("atou42", "agents-in-discord"),
+    ("atulranjanz", "Swatted-Webhook-Spammer"), ("aungchanwathonlatt-del", "Pls-Subscribe-my-YouTube-channel"), ("aungchanwathonlatt-del", "Pls-Subscribe-my-YouTube-channel-"),
+    ("avbak", "symmetrical-spork"), ("avengermsoft", "vkturn-plugin-android"), ("avion121", "V2RayDaily"),
+    ("awesome-vpn", "awesome-vpn"), ("aws", "mcp-proxy-for-aws"), ("aws-samples", "sample-s3-hybrid-cache"),
+    ("awsl-project", "maxx"), ("awwy1222", "clash-sub"), ("ayon-ssp", "ayon-ssp"),
+    ("ayshwaryee", "ssb-website-main"), ("ayushgoyal-a11y", "proxy-server"), ("ayzt0959", "smartproxy-vs-dataimpulse"),
+    ("azadiazinjamigzare", "Service"), ("azatabd", "v2ray_fetch"), ("azip52", "subconverter"),
+    ("azizshahid", "To_do_list"), ("aziztwelve", "vpn_go"), ("b0LBwZ7r5HOeh6CBMuQIhVu3-s-random-fork", "PCL2"),
+    ("bach999-vamous", "Kimi-K2"), ("badhuamao", "FasterVPN-Auto"), ("badhuamao", "my-v2ray-checker"),
+    ("balaharans2904", "Windows-11-Debloat-AI-Slop-Removal"), ("balaji-cse15", "gemi"), ("ballasrr", "DarkVpn"),
+    ("balookrd", "outline-ws-rust"), ("bananasminecraftroblox192-glitch", "DEPI-SSIS-ETL-DWH-Project"), ("bariskisir", "MuxLLMProxy"),
+    ("barry-far", "V2ray-Config"), ("barry-far", "V2ray-Configs"), ("barry-far", "free-v2ray"),
+    ("bated-genuscricetus536", "webhook-proxy"), ("batus5678", "mhr-ggate"), ("bawaajige", "astra-vpn"),
+    ("bayvapourisable154", "Stratum"), ("bcjc2026", "baicaijichang"), ("bcst17", "proxy-manage"),
+    ("behnamnba1985-png", "v2ray-tunnel"), ("beihujidu", "clash-"), ("bellasachs4-bit", "wiregui"),
+    ("benallard", "harbor"), ("bg-grira53", "sql-server-security-audit"), ("bgpeer", "icons"),
+    ("bhavanisuresh", "Proxy-resistant-attendances-ystem"), ("bicespring", "ClashRules"), ("bielsshdropnet-ai", "proxy-vercel"),
+    ("bien000", "the-watcher-ssr"), ("bifrostvnode", "bifrostvnode.github.io"), ("bigsilly94", "mtproto-installer"),
+    ("bililinghouqhaY", "ClashWidget"), ("billy-esteves", "ss_pl_12"), ("bin1site1", "V2rayFree"),
+    ("bingoclash", "bingoclash.github.io"), ("bingyi-liu", "tmdb-proxy-api"), ("birdwarp", "Iran-Anti-Filter-SingBox-2026"),
+    ("birth1mark", "sscc-check"), ("bispopierry7-droid", "PROJETO-SSA---INTERFACE"), ("bitcoinvps", "singbox-vpn"),
+    ("bitesk782-wq", "ljg-skill-xray-book"), ("bitmonky", "PeerTree"), ("bitsfactor", "ssl-service"),
+    ("bk88collab", "hiddify-app"), ("blacker0403", "QQbot"), ("blog1703", "tgonline"),
+    ("bluenviron", "mediamtx"), ("bluereaper-2125", "max-list"), ("bo2so", "karoo"),
+    ("bobevans-commits", "ProxCore"), ("bollywoodhymanrickover646", "zoro"), ("bombasisi4-debug", "my-vless-"),
+    ("bondarevaamelya", "token_ss"), ("bonymalomalo", "vless-auto-update"), ("bowoarunika", "OISD-for-Clash"),
+    ("boypt", "vmess2json"), ("bpanco", "youtube-bot-basma"), ("bq2015", "FreeProxies"),
+    ("braenmendes", "ssf"), ("brahimelgarouaoui", "RL-Name-Changer"), ("brandicoital992", "Awesome-Minecraft"),
+    ("brijesh-maurya-cs", "Wanderlust"), ("broken-osmund815", "Polymarket-Trade-Bot"), ("brother2050", "Proxyium"),
+    ("bruceluk", "v2rayM"), ("brunokeller7", "FortiClientVPN"), ("brunokeller7", "transpovpn26"),
+    ("bsims-codes", "myvmk-ics"), ("bskinn", "cpython-release-feed"), ("bsp087", "proxy-provider-pricing-comparison"),
+    ("bucissss", "Xray-VPN-OneClick"), ("buddies2705", "awesome-memecoin-trading"), ("buj69421", "dataimpulse-oxylabs-proxy-review"),
+    ("bundasmanu", "kamailio-webrtc-gateway"), ("butialabs", "proxywi"), ("bvxwtfmq", "dataimpulse-vs-webshare"),
+    ("bxc949", "best-budget-socks5-residential"), ("caidaoli", "ccLoad"), ("calcipher89", "Nuke-SmartFreeze"),
+    ("camer1111", "ss.com-vacancy-search-python"), ("canadice", "ssl-index"), ("canmi21", "vane"),
+    ("canonneo", "surge_rules"), ("capric98", "clash-domain-list"), ("carloandremoreyra", "XX"),
+    ("carloscano19", "clash-game"), ("carlosroyale", "CabezazoClash"), ("caryyu0306", "proxy-list"),
+    ("catenarytransit", "rtc_quebec_proxy_zip"), ("ccpthisbigdog", "freedomchina"), ("cenfun", "monocart-reporter"),
+    ("cerdocyonina", "lsm"), ("cfsfguyet787856", "Minecraft-Server-Finder"), ("cghk002", "v2rayGG"),
+    ("cgottfried-oss", "Ama-clash-bot"), ("chaitanya-327", "ai-goofish"), ("changsongyang", "V2ray-configs2"),
+    ("chantalunsupportable7191", "mhr-cfw"), ("chaosone", "v2ray_config"), ("charefabdelrazak", "nonstop"),
+    ("charlesndirutu33", "dnskip"), ("charley008", "sshtool2"), ("chasylexus", "openwrt-xray-router"),
+    ("chatgpt-helper-tech", "airport-access"), ("chen08209", "FlClash"), ("chengaopan", "AutoMergePublicNodes"),
+    ("chenkenken1103", "VPN"), ("chenlening", "claude-code-native-anthropic-proxy"), ("chenmoaaaa", "v2ray_configs"),
+    ("chensongpoixs", "QuantLoom"), ("chenx-dust", "DeckyClash"), ("chenzhiguo", "clash-rules"),
+    ("cheo87", "vless-all-in-one"), ("child9527", "clash-latest"), ("chinaTech-byte", "OfferCenter"),
+    ("chiy4728", "Vless_crawl"), ("chrisleekr", "homelab-infrastructure"), ("chukwu-patrick", "five-worker"),
+    ("chyq92", "clash"), ("cimiacybersecurity", "danti"), ("cioooou", "subconverterini"),
+    ("cirosantilli", "china-dictatorship"), ("cirosantilli", "china-dictatroship-7"), ("cjchxgxhc", "domain-filter"),
+    ("clash-downloads", "Clash"), ("clash-downloads", "Clash-Download"), ("clash-free-node", "clash-free-node.github.io"),
+    ("clash-lang", "clash-protocols"), ("clash-latest", "Clash"), ("clash-latest", "Clash-Download"),
+    ("clash-nodes", "clash-nodes.github.io"), ("clash-nyanpasu", "clash-nyanpasu.github.io"), ("clash-s", "clash-s.github.io"),
+    ("clash-space", "clash"), ("clash-verge-node", "clash-verge-node.github.io"), ("clash-verge-rev", "clash-verge-rev"),
+    ("clashclient", "Clash"), ("clashclient", "Clash-Download"), ("clashcontrol-io", "ClashControl"),
+    ("clashfanqiang", "clashfanqiang.github.io"), ("clashformac", "clashformac.github.io"), ("clashforverge", "clashforverge.github.io"),
+    ("clashforwindows-net", "airport-best-20260508"), ("clashhub-net", "airport-rec-cxugsf"), ("clashhub-net", "airport-rec-fz9uj3"),
+    ("clashke", "Clash"), ("clashke", "Clash-Download"), ("clashku", "Clash"),
+    ("clashku", "Clash-Download"), ("clashmianfeijiedian", "clashmianfeijiedian.github.io"), ("clashnext", "Clash"),
+    ("clashnext", "Clash-Download"), ("clashnode2025", "clashnode2025.github.io"), ("clashnodev2ray", "clashnodev2ray.github.io"),
+    ("clashnyanpasunode", "clashnyanpasunode.github.io"), ("clashperk", "clashperk"), ("clashsir", "Clash"),
+    ("clashsir", "Clash-Download"), ("clashtaiwan", "clashtaiwan.github.io"), ("clashtorwindows", "clashtorwindows.github.io"),
+    ("clashv2ray-hub", "clashfree"), ("clashv2ray-hub", "clashv2ray-hub.github.io"), ("clashv2ray-hub", "clashv2rayshare"),
+    ("clashv2ray-hub", "v2rayfree"), ("clashv2rayfree", "clashv2rayfree.github.io"), ("clashv2rayu", "clashv2rayu.github.io"),
+    ("clashvergenode", "clashvergenode.github.io"), ("clashwallcom", "Clash"), ("clashwallcom", "Clash-Download"),
+    ("clashwindow", "clashwindow.github.io"), ("clashxfree", "clashxfree.github.io"), ("clashxmeta", "clashxmeta.github.io"),
+    ("clashxray", "clashxray.github.io"), ("claude89757", "free_https_proxies"), ("claudianus", "clco-proxy"),
+    ("claxpoint", "xconfig"), ("cloudwindy", "v2ray"), ("cloxkzii", "worker"),
+    ("cmliu", "WorkerVless2sub"), ("cmontage", "proxyrules-cm"), ("cochystars", "FreeProxyProxy"),
+    ("codedXX", "js-question"), ("codeking-ai", "cligate"), ("col83", "v2ray-stuff"),
+    ("coldwater-10", "V2ray-Config"), ("colhoes1337", "local-ssl-automate"), ("commercesehoga", "ssc"),
+    ("conanlu1104", "mihomo-geo-SubConverter"), ("connecting001", "blas-base-ssyr2"), ("conoro", "reddit-rss-proxy"),
+    ("constanceintrauterine625", "MySearch-Proxy"), ("cook369", "proxy-collect"), ("cool-cucumber-in-the-town", "v2ray-test-config"),
+    ("cordiverse", "sso"), ("corey11256", "v2ray-config_v5"), ("cortopassialdana", "blockchain-js-core-suite"),
+    ("crackbest", "V2ray-Config"), ("crashgfw", "free-airport-nodes"), ("crazycompanyinc", "agentcontract"),
+    ("crazypeace", "v2ray_wss"), ("crazypeace", "xray-vless-reality"), ("crolankawasaki", "Goida26-Clash"),
+    ("crossxx-labs", "free-proxy"), ("crp4222", "PrivAiTe"), ("cstreit03", "CoC-Stats"),
+    ("curviosclash-gif", "CurviosClash-game-only"), ("cury-w", "proxy-all"), ("cxddgtb", "2026Clash"),
+    ("cxddgtb", "dljdsjq"), ("cxv-drift220", "mythic_tailscale"), ("cybelleweak1220", "green-campus-tracker"),
+    ("cyberd4ch", "free-torrent-cli"), ("cyberteddybear", "ssdeep-similarity-detection"), ("cynotecy", "v2ray"),
+    ("cys92096", "python-xray-argo"), ("cysnies", "deepseek-cursor-proxy-rs"), ("cysurigao", "LRFtoMP4"),
+    ("d0zingcat", "clash-nexus"), ("dDmioko", "v2ray-rulesets"), ("dadododojo", "clash-leaderboard"),
+    ("daeuniverse", "dae"), ("daffwt221", "homelab-raspberry-network-stack"), ("dailijichang", "jichangtuijian"),
+    ("daktil888", "ocp"), ("dalazhi", "v2ray"), ("damonwang127", "clash"),
+    ("dan-mba", "rss2json-proxy"), ("dani9701", "python-apple-fm-sdk"), ("daniel-trachtenberg", "trojan-traffic"),
+    ("danielortiz25", "Bitacora-Tecnica-IV.-Laboratorio-de-Teletransportacion-Digital-SSH-y-RDP-"), ("danilkaduskin74-code", "VPN-Parser"), ("danilkaduskin74-code", "VPN-sub"),
+    ("danmaifu", "mianfeijiedian"), ("danteu", "wahlrecht-cal"), ("darkdoki69", "v2ray"),
+    ("darkflame265", "08_PathClash"), ("darklord-end", "-Graphene-VPN"), ("darknessm427", "Sub"),
+    ("data-to-insight", "ssd-data-model"), ("databay-labs", "free-proxy-list"), ("datastax", "starlight-for-rabbitmq"),
+    ("davitaalliaceous7299", "FalixNodes"), ("dccelectronicsgermany", "SS2026_HWE_Lab_Team_C2"), ("dchen8525-dev", "kcp-proxy-cpp"),
+    ("dctxmei", "v2ray-china-list"), ("ddgksf2013", "ddgksf2013"), ("ddmm1214", "node-config-converter"),
+    ("ddranic", "ios-proxy-rules"), ("debian-professional", "debian-vpn-gateway"), ("decemberpei", "V2rayRunner"),
+    ("dedirosandiaj", "sso"), ("deepak-7777", "VPN-App"), ("deezertidal", "fee-based"),
+    ("deezertidal", "freevpn"), ("delbertbeta", "sso-rs"), ("dementevazina", "host_proxy"),
+    ("denizkaplanst", "openvpn-v2ray"), ("denmrnngp-cloud", "hiddify-steam-deck"), ("denmrnngp-cloud", "hiddify-steam-deck-vpn"),
+    ("denniszlei", "smartdns-domain-lists"), ("denysg001", "zabbix-unified-installer"), ("dequar", "deqwl"),
+    ("despiteportablecomputer411", "proxy-ipv6-generator"), ("dev-proxy-tools", "aspire"), ("devitsentulcity", "ahtapot"),
+    ("devojony", "ClashSub"), ("devopscorner", "nifi"), ("devraces", "ohmyblock"),
+    ("dfgyzb13", "residential-proxy-providers-comparison"), ("dhanasekardr", "traffic-ui-open-source"), ("diflow95400", "x-evolution"),
+    ("dimdasci", "bproxy"), ("dimonb", "vpn"), ("dinger114", "proxy"),
+    ("dinoz0rg", "proxy-list"), ("diroxpatron12", "SubHunterX"), ("disneys", "Mihomo-Dynamic-Overseer"),
+    ("disscript-id", "openai-proxy"), ("distributive-filter937", "royale_lab"), ("divanniyanalityc-eng", "vpn101"),
+    ("divisible-stretcherparty41", "Predict-Fun-Farming-Bot"), ("diyros", "edgetunnel"), ("djck7231", "dataimpulse-vs-smartproxy"),
+    ("djlongy", "container-image-template"), ("djpukatsv", "TSV-Rentals"), ("dkaksdsakdkasdka", "users-subscribes"),
+    ("dmeshechkov", "vpn-subscriptions"), ("dmg4399", "codex"), ("dmitriistekolnikov", "Free_vpns_for_Russ"),
+    ("dmorris-AMC", "DPI-SSL"), ("docmirror", "dev-sidecar"), ("doitnow40", "sst"),
+    ("dongchengjie", "airport"), ("donsdesmages", "vpn-browser"), ("dorrin-sot", "V2RAY_CONFIGS_POOL-Processor"),
+    ("dos2bang", "v2ray_config"), ("double16", "plex-pia"), ("dpangestuw", "Free-Proxy"),
+    ("dpsserver", "VPNCONFIG"), ("dr-andytseng", "afl-calendar-feeds"), ("dromeroo2", "SSOO"),
+    ("dsccccc", "clashfree"), ("dswens-arch", "zappy-clash-bot"), ("dtfiqj", "best-rotating-proxy-providers"),
+    ("duckray-client", "free-vless-keys"), ("dungnt1312", "dntproxy"), ("duykhanhln1819", "ss8_miniproject"),
+    ("dwgx", "WindsurfAPI"), ("ebrasha", "abdal-proxy-hub"), ("ebrasha", "cidr-ip-ranges-by-country"),
+    ("ebrasha", "free-v2ray-public-list"), ("edaoren", "v2ray-linux-chrome"), ("edwinvizcarra1234591-max", "tg-ws-proxy-ANDROID"),
+    ("eelpu326", "best-budget-payg-proxies"), ("eggbrid2", "mobileClaw"), ("egkristi", "RavenFabric"),
+    ("eiler2005", "ghostroute"), ("einyx", "tkr"), ("elanski", "proxy-preflight"),
+    ("elcompastreaming18-svg", "Prison-Lift-Clash-Helper"), ("electron-v2ray", "Telegram-Config-Dumpr"), ("elf2017spring", "ConfigsHub"),
+    ("elijah-hall-asdq1", "Clash-Verge-Rev-History"), ("elijah-hall-asdq1", "V2rayN-History"), ("elin-olsson", "ssh-tls-auditor"),
+    ("elliottophellia", "proxylist"), ("elly5490", "telegram-proxy"), ("elmaliaa", "AdderBoard"),
+    ("elongflys-tech", "roxi"), ("elvinsuleymanov", "AutoGuard-VPN"), ("elyobelyob", "bin-cal"),
+    ("emadiano-cod", "v2ray-proxy"), ("emanuel-minetti", "leptos-ssr-first"), ("ember-01", "Clash-Aggregator"),
+    ("emberuh", "Code-iqvubdytfr-Java"), ("emberuh", "Code-iuxgqjwdkc-Java"), ("emberuh", "Code-jrhjmrtvmq-Java"),
+    ("emberuh", "Code-nfttowfebo-Java"), ("emiramdanii", "authoring-tool-v4-ssr"), ("emmanueldrecqpro-coder", "gcp-securewebproxy-troubleshoot"),
+    ("enkinvsh", "dropweb"), ("entur", "anshar"), ("envoyproxy", "envoy"),
+    ("epappas", "llmtrace"), ("epigraphcommissioner131", "ai-one-click-beauty"), ("erkobridee", "nextjs-ssg"),
+    ("ermaozi", "ermao.net"), ("ermaozi", "get_subscribe"), ("ernestaweak8629", "yourvpndead"),
+    ("esmelimited23", "Cloud-Native-Load-Balancer"), ("esterTion", "bangdream_master_db_diff"), ("eswar7216", "TreeListWithMultiNode"),
+    ("ether", "ep_email_notifications"), ("eundongg", "MK_Subscribe_System"), ("eurus1", "V2Box-Client-Config-ios"),
+    ("evanyou0411-design", "zalo-agent-cli"), ("everywall", "ladder"), ("evgenyzh", "iinv-xray-releases"),
+    ("evilork", "proxysvnovich"), ("explorative-largemagellaniccloud775", "MF.Radius"), ("expressalaki", "ExpressVPN"),
+    ("eyaorganization", "To-do-App"), ("eys200301-netizen", "COVID-19-Xray"), ("f100024", "sshgut"),
+    ("fa0311", "twitter_api_safe_proxy"), ("facksten", "V2rayScrapper"), ("fadh24434", "webarsenal"),
+    ("fafa1121", "edaw3"), ("fangyunh", "Gem5-simpleSSD-SPDK-simulation"), ("fanqiangclash", "fanqiangclash.github.io"),
+    ("fanqiangjiedian", "fanqiangjiedian.github.io"), ("fanqiangv2ray", "fanqiangv2ray.github.io"), ("fanshuiyu", "invisix"),
+    ("farahnicolemijares-collab", "Lab11_DataBase_Abdallah"), ("farengeyit", "V2Ray"), ("fastasfuck-net", "VPN-List"),
+    ("fastclash", "fastclash.github.io"), ("fazaibra1996-spec", "Vercel-XHTTP2"), ("fdarryl", "PingSieve"),
+    ("fdciabdul", "Vpngate-Scraper-API"), ("fedoretsigor-cloud", "linkedin-xray-search-toolkit"), ("feimaotuivpn", "v2ray"),
+    ("feiniao1-VPN", "Airport-node-VPN"), ("feiniao1-VPN", "Free-Accelerator---VPN"), ("feiniao1-VPN", "Free-ladder---VPN"),
+    ("feiniao1-VPN", "Node-Airport---VPN"), ("feiniao1-VPN", "Node-based-VPN"), ("feiniao1-VPN", "VPN-service"),
+    ("feiniao1-VPN", "Wall-Climbing-Accelerator---VPN"), ("feiniao25789", "feiniao-vpn"), ("feiniao25789", "vpn"),
+    ("feiniaovpn", "--VPN"), ("feiniaovpn", "Accelerator-Node---VPN"), ("feiniaovpn", "Free-Airport---VPN"),
+    ("feiniaovpn", "Free-VPN"), ("feiniaovpn", "Game-Accelerator---VPN"), ("feiniaovpn", "Node-Airport-VPN"),
+    ("feiniaovpn", "Office---VPN"), ("feiniaovpn", "Shared-VPN"), ("feiniaovpn", "feiniao-VPN"),
+    ("feixingzhou", "clash-subscription"), ("feng-yifan", "token-proxy"), ("fengguokeji", "fengguokeji.github.io"),
+    ("ferrarigamer458italia", "metube"), ("ferrofluidd", "Corporate-Clash-Cog-Viewer"), ("firezone", "firezone"),
+    ("fisabiliyusri", "XRAY-V2RAY-CUSTOM-SL"), ("flankmekid", "tuichess"), ("flclash-us", "clash-linux-cli-config"),
+    ("flclash-us", "clash-router-openwrt"), ("flclash-us", "vps-proxy-deploy-guide"), ("fleetstreetremit109", "Post-X-Premium.com-Automated-Post-Publishing"),
+    ("flexmonster", "pivot-elasticsearch-proxy"), ("flitpend", "gfwlist2surge"), ("floppy007", "floppyguard"),
+    ("fluxflapping699", "factory-cursor-bridge"), ("fmjnax", "dynamic-proxy"), ("folksreptilian850", "SSM-PC"),
+    ("formatorcn", "daily-v2ray-sub"), ("forproxyband", "android-proxy-app"), ("fortniteseason6", "LoonLab"),
+    ("foysal137", "vless-server"), ("fpcloh54", "webshare-vs-datimpulse-proxy-comparison"), ("frank-vpl", "servers"),
+    ("free-clash-ssr", "free-clash-ssr.github.io"), ("free-clash-v2ray", "free-clash-v2ray.github.io"), ("free-nodes", "clashfree"),
+    ("free-nodes", "v2rayfree"), ("free-proxy-nodes", "free-nodes"), ("free-v2ray", "free-v2ray.github.io"),
+    ("free-v2raynode", "free-v2raynode.github.io"), ("free18", "v2ray"), ("freeclashn", "freeclashn.github.io"),
+    ("freeclashssr", "freeclashssr.github.io"), ("freeemc2", "search-proxy-1"), ("freefq", "free"),
+    ("freemellow", "freemellow.github.io"), ("freenekoray", "freenekoray.github.io"), ("freeproxyvpn", "freeproxyvpn.github.io"),
+    ("freequantumultxnode", "freequantumultxnode.github.io"), ("freestashnode", "freestashnode.github.io"), ("freetrojannode", "freetrojannode.github.io"),
+    ("freev2raynodes", "freev2raynodes.github.io"), ("freev2rayw", "freev2rayw.github.io"), ("freevlessnode", "freevlessnode.github.io"),
+    ("freevpnapp", "freevpnapp.github.io"), ("freevpntuijian", "freevpntuijian.github.io"), ("frozensmile94", "vless-sub"),
+    ("fuckuself", "proxy"), ("fukumizu", "SS-SARSA"), ("funcra", "vg-mirror"),
+    ("furqanistic", "ssg-project"), ("furuterika", "JapneseKonwledgeAgent"), ("fxai666", "fxai-toolkit"),
+    ("fyvri", "fresh-proxy-list"), ("g-hunter-g", "awesome-vpn"), ("g-star1024", "my-clash-subscribe"),
+    ("gamecentre7x2", "Api-Proxy"), ("gamelist1990", "FerrumProxy"), ("gameoplight-lgtm", "FlowSet"),
+    ("ganev11", "SSTrader"), ("gaoyi1020-web", "proxy-bundle"), ("gardener", "vpn2"),
+    ("gastonempathic658", "YouTube-to-Cloud-Downloader"), ("gauravlamba78", "FreeChat"), ("gautam-pahlawat", "DOD"),
+    ("gbagliesi", "cms-sst-report"), ("gcbz123", "answer-bot-backend"), ("gdfsnhsw", "AutoClash"),
+    ("gdhdhgdhxg78-bit", "v2ray_404-sub"), ("geek-spot", "Free-Config"), ("gege-circle", ".github"),
+    ("genyleap", "GenyConnect"), ("geometric-detection287", "Socat-Network-Operations-Manager"), ("geshan", "domain-scraper"),
+    ("getlantern", "lantern"), ("getmeridian", "meridian"), ("getvaier", "vaier"),
+    ("gfertel", "affirm-sandbox-storefront"), ("gfpcom", "free-proxy-list"), ("gfw-killer", "Free-v2Ray-Nodes"),
+    ("gheescoo", "tsrh_xray"), ("giantswarm", "muster"), ("giantswarm", "proxysocks"),
+    ("gibson25D", "POXY-CLI"), ("githubloon", "githubloon.github.io"), ("gitrecon1455", "fresh-proxy-list"),
+    ("glebesikov11-bit", "vless-public"), ("global-os", "proxy"), ("globlord", "AIstudioProxyAPI"),
+    ("gmij", "TunProxy.NET"), ("gnosis", "gnosis_vpn"), ("gnosis", "gnosis_vpn-app"),
+    ("goauthentik", "authentik"), ("goncalorosa96", "codemode-mcp"), ("gongchandang49", "TelegramV2rayCollector"),
+    ("googledslz", "multi-proxy-config_dslz"), ("gooseteam-hackers", "GooseVPN"), ("gopherlearning", "passbolt-sso"),
+    ("goshkow", "Zapret-Hub"), ("gosuda", "ssh-chatter"), ("graphql-hive", "gateway"),
+    ("grayshark-same", "fish_vpn_bot"), ("greatit-lab", "ITM.Vision_SSO_v1"), ("greenlandspinel496", "FlowDriver"),
+    ("gregorybarille", "ssix"), ("grllq458", "grllq458"), ("gsamuele78", "R-studioConf"),
+    ("gslege", "CloudflareIP"), ("gswxy", "Oracle-Forge"), ("gsyunip", "ispip"),
+    ("gtaiv005", "PublicProxyList"), ("gtxy27", "clash-rules"), ("gumieri", "nenya"),
+    ("gurudeb123", "ai-sdk-chrome-extension"), ("gwindev", "vpn-client-api"), ("gz82570636", "Research-on-UAV-Gesture-Recognition-and-Control-System-Based-on-OpenCV-and-MediaPipe"),
+    ("gzd1546", "dataimpulse-vs-iproyal"), ("h4rm0n1c", "quantzhai"), ("haandiiong", "yp7.net"),
+    ("hacker7221", "ai-debates"), ("hackstergirlrocks", "devlies"), ("haducdung280107", "K25_CNTT5_CSDL_SS13_01"),
+    ("haducdung280107", "K25_CNTT5_CSDL_SS13_02"), ("haducdung280107", "K25_CNTT5_CSDL_SS13_03"), ("haducdung280107", "K25_CNTT5_CSDL_SS13_04"),
+    ("haducdung280107", "K25_CNTT5_CSDL_SS13_05"), ("haducdung280107", "K25_CNTT5_CSDL_SS13_MINMAP"), ("hadzicni", "ssh-tunnel-pwsh"),
+    ("hafizmudassara857-byte", "assignment1-sss"), ("haha123BC52", "SOCKS5-Proxies"), ("hamdanalk3biii-ux", "kyprox"),
+    ("hamedcode", "port-based-v2ray-configs"), ("hamedp-71", "N_sub_cheker"), ("hamedp-71", "Trojan"),
+    ("hamedp-71", "openproxylist"), ("handeveloper1", "DailyProxy---Auto-Update-List"), ("hans-thomas", "v2ray-subscription"),
+    ("hansenlandun-prog", "freeproxy-node-sub"), ("hanyanglau-ssc", "ssc-poc"), ("haoch1", "subscribe"),
+    ("haoyouandme", "my_own_clash_rules"), ("haproxy", "haproxy"), ("hardcopycortex461", "worker-bridge"),
+    ("harismy", "BotVPN"), ("harryhastam", "v2rayXUI"), ("harryheros", "shieldnova"),
+    ("haruboring", "clash-royale-daily-stats"), ("hasnainshah9", "xray-vision"), ("hastons-isiavwe", "ai-hardware-security-iot"),
+    ("hati4100", "oag"), ("hattson-corp", "SSHFileManager"), ("hcm02880", "dataimpulse-vs-netnut"),
+    ("hector561", "linux-client"), ("heimian0722-hash", "clashrule"), ("hello-world-1989", "cn-news"),
+    ("hello-yunshu", "Xray_bash_onekey"), ("hello-yunshu", "Xray_bash_onekey_Nginx"), ("hello-yunshu", "Xray_bash_onekey_api"),
+    ("hellopoisonx", "v2rayConfig"), ("hendrikbgr", "Free-Proxy-Repo"), ("henrijaime", "Flutter-Awesome-Dialogs"),
+    ("hepingtao", "llm-proxy-gateway"), ("herospeed", "v2ray-config"), ("hewhewhwehe", "vless-gui-client"),
+    ("hezhijie0327", "GFWList2PAC"), ("hidougaming", "vpn-server-manager"), ("hieuv8835-star", "bai1_ss13"),
+    ("hieuv8835-star", "bai2_ss13"), ("hieuv8835-star", "bai3_ss13"), ("hieuv8835-star", "bai4_Ss13"),
+    ("hieuv8835-star", "btth_Ss13"), ("hieuv8835-star", "btth_Ss13v"), ("hiztin", "VLESS-PO-GRIBI"),
+    ("hjtr7mymht-dot", "WOA_AutoBot"), ("hknyildz", "Clashdeckster-Backend"), ("hmcts", "crime-mcp-register"),
+    ("hmcts", "sscs-case-loader"), ("hmcts", "sscs-cor-frontend"), ("hmcts", "sscs-cron-trigger"),
+    ("hmcts", "sscs-submit-your-appeal"), ("hmcts", "sscs-tribunals-case-api"), ("hoanganh635", "IT202-Ss08-BTVN"),
+    ("hoeongj", "ssuAI"), ("holandyoung", "clash_rule"), ("hongCchao", "GlobalMedia-ClashRule"),
+    ("hongkongclash", "hongkongclash.github.io"), ("hooksit", "androidtv-vpn-configs"), ("hookzof", "socks5_list"),
+    ("hooman1234567", "v2ray-sales-bot"), ("horapusa-lk", "V2ray-API"), ("horoshiyvpn-rus", "smart-vpn-sub"),
+    ("hotcom-agency", "vue-ssr-starter"), ("hotseo123", "shida-jichang-tuijian"), ("hq450", "fancyss"),
+    ("hq450", "fancyss_history_package"), ("hrostami", "v2ray-configs"), ("huameiwei-vc", "stash-kr-proxy-auto-refresh"),
+    ("huangjunyin991-art", "ak-proxy"), ("huangyxi", "ssh-proxy"), ("hubertfooted416", "clash-wsl-network-doctor"),
+    ("huha-create", "TikTok-VPN-"), ("hunter-read", "lfg-bot-static"), ("hutufeng", "rule.Clash"),
+    ("huutuan1705", "DC_SSA"), ("hvwin8", "autojiedian"), ("hwanz", "SSR-V2ray-Trojan"),
+    ("hydraponique", "roscomvpn-geoip"), ("hyjack-00", "-clash_subscription_public"), ("hyln", "MyClashShell"),
+    ("hysteria350", "free-jichang"), ("hysteriawindows", "hysteriawindows.github.io"), ("hyynguyen288-ai", "mnprj-ss12"),
+    ("hzfk27", "cheapest-residential-proxy-1gb"), ("i1986o", "mtg-cal"), ("iaghapour", "v2ray-converter"),
+    ("iamolivierdrabek", "whereami"), ("iamqingli", "OpenClash"), ("iasds", "qubes-clash-gateway"),
+    ("ibdj", "ssdm"), ("iboxz", "free-v2ray-collector"), ("icekidyt", "clash"),
+    ("icon199012684", "clash"), ("icue", "SteamWishlistCalendar"), ("idadawn", "sing-box-deploy"),
+    ("idkdevoo", "intercept-wave-upstream"), ("idtheo", "V2Ray-CleanIPs-Servers"), ("ieookm", "ssss"),
+    ("ifngpk74", "choose-residential-proxy-provider"), ("igareck", "vpn-configs-for-russia"), ("igbokwe-emeka", "connector-proxy"),
+    ("igikukik59", "Proxy-Google-Checker"), ("igjds2028", "my-freejiedian"), ("ignMaro", "new"),
+    ("igo8748", "ssr"), ("ihossein", "v2ray-server-less"), ("ihyall", "sing-box-rules"),
+    ("iiTzIsh", "multi-v2ray"), ("iimmutable-ai", "cc-modelrouter"), ("ilamafascista615", "kyma"),
+    ("iluobei", "clash-pt-rules"), ("iluobei", "miaomiaowu"), ("ilya-120", "vpn-tester"),
+    ("ilyaszdn", "Ladder"), ("im-hady", "V2RayAggregator"), ("im-hady", "v2ray-configs"),
+    ("imegabiz", "Anonymous-ir-proxy-configs"), ("imegabiz", "DPI-Phantom"), ("imewei", "pyXRayLabTool"),
+    ("imrekpaladinov-web", "vpn"), ("imtj157", "web-scraping-proxies"), ("in-ci", "clash_rules_merged"),
+    ("in4it", "vpn-server"), ("indiavpn", "indiavpn.github.io"), ("infinilabs", "gateway"),
+    ("infinitexlks", "linkhub"), ("infinitymood", "config-bridge"), ("infzo", "TrajProxy"),
+    ("inimulky", "doh-proxy-worker"), ("injustice4934", "GitHub-Copilot-Free"), ("inoribea", "patchomo"),
+    ("investidorbot-del", "dashbot-proxy"), ("ipdragon1537", "TranNhatLong_B25DTCN310_Trigger_ss13_bt1"), ("ipdragon1537", "TranNhatLong_B25DTCN310_Trigger_ss13_bt2"),
+    ("ipdragon1537", "TranNhatLong_B25DTCN310_Trigger_ss13_bt3"), ("ipdragon1537", "TranNhatLong_B25DTCN310_Trigger_ss13_bt4"), ("ipdragon1537", "TranNhatLong_B25DTCN310_Trigger_ss13_bt5"),
+    ("ipdragon1537", "TranNhatLong_B25DTCN310_Trigger_ss13_mindmap"), ("ipdssanggau", "cloudflare-Management"), ("iplocate", "free-proxy-list"),
+    ("iqoih63", "best-proxy-provider-comparison"), ("ircfspace", "V2ray-Configs"), ("ircfspace", "V2ray-Configs-Store"),
+    ("ircfspace", "XrayRefiner"), ("ircfspace", "location"), ("ircfspace", "tester"),
+    ("ircfspace", "updater"), ("irchamrizqi20-debug", "plugin-zombie-escape-counter-strike-1.6-gun-xp-level"), ("iseeyoou26-wq", "CryNet-SysTems-VPN-vless"),
+    ("ishalumi", "proxy-node-collector"), ("ismest", "xray-denoiser"), ("isra-osvaldo", "Evasion-SubAgents"),
+    ("iteride", "vpn"), ("itpourya", "V2rayBot"), ("its-the-vibe", "RedisRelay"),
+    ("itsanwar", "proxy-scraper-ak"), ("itsaquestion", "py4ss_v4"), ("itsyebekhe", "PSG"),
+    ("itzXian", "C.C."), ("itzsujal7", "Project1-java-reserve-proxy-aws"), ("ivngineer", "gitroyale"),
+    ("iwh3n", "tg-proxy"), ("iyarivky", "reality-configs"), ("iyarivky", "sing-ribet"),
+    ("j0rd1s3rr4n0", "api"), ("jAsonX1136", "skin-clash"), ("jaatji261019-alt", "voxify-frontend"),
+    ("jackbayliss", "cloudflare-r2-rss"), ("jacklondon1945", "v2rayN.deb"), ("jackmoo1", "xray"),
+    ("jackrun123", "v2ray_configs"), ("jacobax", "snippets"), ("jafarm83", "ConfigV2Ray"),
+    ("jafish0", "ssi-platform"), ("jagger235711", "V2rayCollector"), ("jaimeautomatiza", "tle-proxy"),
+    ("jaimeoka", "US_list"), ("jaimetur", "SSB_RetuningAutomations"), ("jainnishant779", "vpn_cloude"),
+    ("jannasweetened9049", "SwizGuard"), ("japanvpn", "japanvpn.github.io"), ("jasgues", "nodejs-proxy-server2"),
+    ("jasonliu2333", "grok-subscribe-blacklist"), ("jav974", "react-refsignal"), ("javieroliveros24", "Javier_Oliveros_Lepe_Bit-cora-T-cnica-IV.-Laboratorio-de-Teletransportaci-n-Digital-SSH-y-RDP-"),
+    ("jayli", "block-proxy"), ("jb21cn", "proxy-subscription"), ("jbaranski", "majorleaguesoccer-today"),
+    ("jbasoft", "V2ray"), ("jcastro", "mailgun-ses-proxy"), ("jdnei", "FlowerCloud"),
+    ("jdnei", "JiChangTuiJian"), ("jdnei", "WgetCloud"), ("jdnei", "bygcloud"),
+    ("jdnei", "ctc"), ("jdnei", "flyingbird"), ("jdnei", "liangxin"),
+    ("jdnei", "mitce"), ("jdnei", "mojie"), ("jdnei", "naixi"),
+    ("jdnei", "naiyun"), ("jdnei", "peiqianjichang"), ("jdnei", "yifen"),
+    ("jdxj", "sing-box-config"), ("jeet8200", "CDN-SNI-Scanner-PLUS-for-V2Ray-xray"), ("jeffclough", "podcaster"),
+    ("jeliasrm", "req-replace"), ("jeric765", "wireguard"), ("jessi-2023", "homebrew-tap"),
+    ("jester4411", "amnezia-vpn"), ("jesusmedrandam", "miniature-octo-palm-tree"), ("jetwalk", "japan-sub"),
+    ("jferreyradev", "simple-deno-proxy"), ("jhao104", "proxy_pool"), ("jhosuemiscanvilchez", "ssh-api"),
+    ("jhpower901", "xray-compose"), ("jiangzihan", "xray-bridge"), ("jibsz03", "vpn"),
+    ("jichang2026", "haojichang"), ("jichangbaike", "ikuuu"), ("jichangclash", "jichangclash.github.io"),
+    ("jichangmianfei", "jichangmianfei.github.io"), ("jichangtizi", "jichangtizi.github.io"), ("jichangv2ray", "jichangv2ray.github.io"),
+    ("jichangzhu", "JichangTuijian"), ("jiedian123com", "jichangtuijian"), ("jiedianmianfei", "jiedianmianfei.github.io"),
+    ("jim2107054", "Housely"), ("jimmyk9573", "openwebui-ollama-proxy"), ("jinghengLi", "clash"),
+    ("jiswordsman", "mac_software"), ("jit-a11y-cmyk", "vpn-configs"), ("jithin-jz", "ClashCode"),
+    ("jithin2501", "Mariya-Homes-Website"), ("jkhdjkhd", "Cloudflare-Accel"), ("jkroepke", "openvpn-auth-oauth2"),
+    ("jku-win-se", "teaching-2026.ss.prse.braeuer.team3"), ("jku-win-se", "teaching.ss26.prse.prwiki.braeuer"), ("jl-wynen", "scitacean-sso"),
+    ("jlintvet", "SST-Test"), ("jlintvet", "SSTv2"), ("jlwebs", "AllApiDeck"),
+    ("jmo79", "Pyton_ssc32_Test1"), ("jnjal", "v2ray"), ("joaojefferson-hash", "Painel-SST--Chabra"),
+    ("joestonecodes", "drinaxian-regency-dashboard"), ("john1903", "sst-smartmath-api"), ("johncenadududu", "pytorch-simsiam-contrastive-ssl"),
+    ("johnson434", "fortigate-to-aws-site-to-site-vpn"), ("johopechh", "Clash"), ("jokertalor-cpu", "admin-proxy"),
+    ("jonascolditz3-dot", "SSC-Database-Gen-Tool"), ("jonnysod", "pattern-clash"), ("joost-prive", "ClashRoomsInstaGroepsfoto"),
+    ("jordgarvi", "windows-service-desk-lab"), ("josebormey", "render-eltoque-proxy"), ("josonzhou-maker", "hiddify-app"),
+    ("joy-deploy", "free-proxy-list"), ("jpassick", "ig-follower-proxy"), ("jqmzfj", "wg-clash-admin"),
+    ("jsoncc", "jcclab"), ("jtmdrums", "ssg-brassandbonect-deploy"), ("jubishop", "podhaven"),
+    ("judawu", "nsx"), ("julxxy", "smart-proxy-rules"), ("junjun266", "FreeProxyGo"),
+    ("justinechris", "chinawallvpn.github.io"), ("justinritchie", "clash-of-clans-mcp"), ("jy01906843ha", "my-clash-rules"),
+    ("jy02739245", "ssh_tools"), ("jzrqs", "node-subscribe"), ("kachion27", "SQL_SS13_BTVN_01"),
+    ("kachion27", "SQL_SS13_BTVN_02"), ("kachion27", "SQL_SS13_BTVN_03"), ("kachion27", "SQL_SS13_BTVN_04"),
+    ("kachion27", "SQL_SS13_BTVN_BTTH"), ("kachion27", "SQL_SS13_BTVN_MINDMAP"), ("kaiserproger", "x-ui-hybrid"),
+    ("kaizhi-ai", "kaizhi-ai"), ("kalde5307", "omarchy-ibm-theme"), ("kamzy01", "TG-WebApp-Proxy"),
+    ("kan996", "clashini"), ("kanam150901", "namm.901"), ("kangeek", "proxy-config"),
+    ("kanokphol3013", "RSN"), ("karimmakni0", "sstm-chariots-vercel"), ("kasesm", "Free-Config"),
+    ("katiane-cast", "dashboard-ssotica"), ("katrien-tom", "fuqiang"), ("katvixlab", "xray-tlg"),
+    ("kawaiipantsu", "ip-blacklist-collection"), ("kazetomirai", "Quickly_Get_Proxy_IP"), ("kcgp007", "v2ray-rules-dat_direct-list_convert"),
+    ("keating666", "clash-rules"), ("keizno", "vod_stream_proxy"), ("kelvinxue1107", "v2ray_ansible"),
+    ("kemchurch-cloud", "mProxy"), ("ken6565", "ClashForge"), ("kenshin-arch", "Meta-Business-Suite-SSL-Pinning-Bypass"),
+    ("kent79367", "ss"), ("kenzok8", "openwrt-clashoo"), ("ketanvpn", "webvpn"),
+    ("kevin-hf", "v2ray-configs-collection"), ("khaihoan1504", "IT202_SS13_1"), ("khaihoan1504", "IT202_SS13_2"),
+    ("khaihoan1504", "IT202_SS13_3"), ("khaihoan1504", "IT202_SS13_4"), ("khaihoan1504", "IT202_SS13_BTTH"),
+    ("khaled4123e", "AIOS"), ("khbmgh", "clasher"), ("khoriguch0908", "TodoList_Backend_NodeJS"),
+    ("kickxly-dev", "uwu-proxy"), ("kid941005", "clash-owner"), ("kidddr", "CEO-Clash"),
+    ("kiet50524", "My-TW-Coverage"), ("kieuquangduy", "SS2Final_Group9"), ("kingorza2011-ctrl", "vpn-sub"),
+    ("kingorza2011-ctrl", "vpngate-servers"), ("kingstreet637", "godscanner"), ("kiri11uk", "Clash-rule"),
+    ("kirilllavrov", "XPowerSpirit-OpenWRT"), ("kirito201711", "Shadowsocks-go"), ("kirtim8895", "awesome-privacy-tools"),
+    ("kiyo-astro", "SSDL-SatPass-Notification"), ("kjmngan04", "NguyenThiKimNgan_DTCN194_IT103B_SS12_miniprj_ss12"), ("kklouzal", "Docker_Proxy"),
+    ("kkoltongi99", "speedc"), ("kltk", "v2ray-tools"), ("knam2609", "edge_royale"),
+    ("kninetimmy", "Free-AI-SSD"), ("koktoghay", "v2ray-route-setting"), ("komutan234", "Proxy-List-Free"),
+    ("kongwy", "surfshark-for-clash"), ("konradoai", "proxy-downloader"), ("konst-sol", "amproxy"),
+    ("konstpic", "SharX"), ("kooker", "FreeSubsCheck"), ("kooloopoo", "TELEGRAM_PROXY_SUB"),
+    ("kopyie", "v2ray-scanner"), ("koqzioo", "soax-vs-dataimpulse-proxy-comparison"), ("kort0881", "proxy-auto-checker"),
+    ("kort0881", "sbornik-vless"), ("kort0881", "telegram-proxy-collector"), ("kort0881", "vpn-aggregator"),
+    ("kort0881", "vpn-checker-backend"), ("kort0881", "vpn-vless-configs-russia"), ("korus-ticket", "korus-dashboard-proxy"),
+    ("koteshwr-ra", "linux-mac"), ("koylpou", "clash-rules"), ("kravchenkosaveliy27-crypto", "my-vpn"),
+    ("kringemega", "VlessParser"), ("krishjaat995", "SMM-Panel-Bulk-Action-Bot"), ("krishn11x", "ACL-Next"),
+    ("kristof-mattei", "endless-ssh-rs"), ("kristof-mattei", "endless-ssh-rs-with-web"), ("krokmazagaga", "http-proxy-list"),
+    ("krot357", "CN-v2ray-install"), ("ksangtho9", "trojanscheduler"), ("ksenkovsolo", "HardVPN-bypass-WhiteLists-"),
+    ("kube-kaptain", "vendor-envoy-gateway-proxy"), ("kubevirt", "ssp-operator"), ("kuciybes", "vpn-clash-rules"),
+    ("kuddy-ai", "1yuan-ssl"), ("kudryash0vv", "kudryash0vv.YKTFLOW"), ("kuoizong881681", "aether-vpn"),
+    ("kurropl", "ssr-sevilla"), ("kvzez718", "instagram-mobile-proxy-bans"), ("kylepeart21", "get-icmp9-node"),
+    ("kzb12580", "Prism"), ("l610128078", "sssss"), ("laduykhang776353-tech", "BT5_SS7_IT202_CNTT7_LADUYKHANG"),
+    ("laduykhang776353-tech", "BT7_SS7_IT202_CNTT7_LADUYKHANG"), ("lajczik", "gatekeeper"), ("lalifeier", "proxy-scraper"),
+    ("lance65", ".github-workflows-openwrt-ci.yml"), ("laneshields", "ssr-mcp"), ("lanzm", "MetaFetch"),
+    ("laosan-xx", "my-v2ray-geodata"), ("lasttoxax-sourse", "vpn."), ("lblod", "verenigingsregister-proxy-service"),
+    ("lcalmbach", "pressreview"), ("lchw1", "my-proxy-sub"), ("ldebruijn", "graphql-protect"),
+    ("ldnelson16", "573-FPGA-PUF"), ("learntrading-org", "tracking-proxy"), ("lebe-dev", "kaiman-webhooks-proxy"),
+    ("lechivy111", "SS08-BAITHUCHANH-202"), ("lee1613", "AC-Proxy-Audit"), ("leesuncom", "clash-mosdns"),
+    ("legeiger", "mensa-to-ical"), ("legiz-ru", "mihomo-rule-sets"), ("legrs", "fake-Trojan-horse"),
+    ("leonardocavalca19", "NutriClash"), ("leoo-9", "absent-vpn"), ("lerjtl", "Testfree"),
+    ("lestday-LAB", "Wikidot-CDN-Mirror"), ("lewis617", "clash-cfg"), ("lexariley", "v2ray"),
+    ("lexariley", "v2ray-test"), ("lf-ikunS", "clash-verge"), ("lferrarotti74", "Squid-Proxy"),
+    ("lhbbingzi", "clash-rules"), ("liMilCo", "v2r"), ("liang890325", "SSNS"),
+    ("liangdabiao", "ecom-details-image"), ("liangshengyong", "LanWan"), ("liante0904", "ssh-reports-scraper"),
+    ("liaohch3", "claude-tap"), ("libai3699", "CY5"), ("libnyanpasu", "clash-nyanpasu"),
+    ("licheng527", "Free-servers"), ("lidiama9513", "goated"), ("liketolivefree", "kobabi"),
+    ("likzid", "vless2"), ("likzil", "vless1"), ("limintara", "V2RAY_SUB"),
+    ("linG5821", "v2ray-auto"), ("lingga1997", "full-stack-proxy-nginx-n8n-for-everyone-with-docker-compose"), ("lingyuanzhicheng", "railgun-ipsync"),
+    ("linhang945", "Clash-Rule-Converter"), ("linhdang4206", "tess-ssh"), ("linjianbjfu", "litellm-ghc-proxy"),
+    ("linuxhobby", "autoinstallv2ray"), ("linuxhobby", "xray-v2ray-install"), ("linzjian666", "chromego_extractor"),
+    ("liqiangsky", "clash-proxies"), ("liquanchen9", "vless-demo"), ("lirantal", "eslint-plugin-anti-trojan-source"),
+    ("lishi0105", "frp-automic"), ("litiande03", "Clash"), ("liusj5257", "azurlane_anti_name"),
+    ("lixmal", "caddy-netbird"), ("lizhang-bot", "proxy_pool"), ("ljnpng", "proxy-rules"),
+    ("ljrdominic-png", "misakaReborn"), ("lkhub043-lab", "lk7-xray"), ("llaravell", "clash-rules"),
+    ("llgelarall", "-TelegramV2RayConfigFetcher"), ("llgzf", "clash-config"), ("lluchkaa", "smartass-subscriber"),
+    ("lm705", "vair"), ("lmfying", "cf-vless"), ("lockcp", "LiteGist"),
+    ("lockezhan", "Xray-Portal"), ("loderunner", "chain-mock"), ("logoministerroad", "Windscribe-VPN-2026-ba"),
+    ("logos-co", "logos-logoscore-py"), ("lolandegrenadian150", "IntelliHybrid"), ("lolosssss", "rules_for_clash_and_shadowrocket"),
+    ("lonecale", "Rules"), ("longlon", "v2ray-config"), ("lookfeeb", "Hlem_SSH"),
+    ("loong2004", "Clash_Backup"), ("loopaz", "V2ray-config-convet"), ("lordi2809", "agent-infra-security"),
+    ("lothianregionophrysapifera132", "docker-openvpn"), ("lovedxc", "smartdns-rules-dat"), ("lqdflying", "cursorProxy"),
+    ("lturrr", "ssh"), ("luanbonito02", "windows"), ("lubaiwen", "-"),
+    ("lucas01feh", "oss-security-audit"), ("luckyharry1", "Xray-Project"), ("ludivor", "ssiptv"),
+    ("luen-eth", "relay-rpc"), ("luigibarretta", "wallet-aggregator"), ("luizbizzio", "tailscale-mtu"),
+    ("luke-03-11", "jvm-pybind"), ("lukuochiang", "mihomo"), ("lumen-argus", "lumen-argus"),
+    ("lunzima", "DeepProxy"), ("lureiny", "v2raymg-ip-node"), ("luxxuria", "harvester"),
+    ("lvyuemeng", "scoop-cn"), ("lxhn-jpg", "clash-rule-lxh"), ("lyc-aon", "codex-session-manager"),
+    ("lyp256", "caddy-vless"), ("lyqnihao", "proxy"), ("lzell", "AIProxySwift"),
+    ("m24842", "CoC_Bot"), ("m9h4s", "V2Ray"), ("mIwr", "tg-ws-proxy-ios"),
+    ("mRFWq7LwNPZjaVv5v6eo", "cihna-dictattorshrip-8"), ("ma3uk", "russia-clash-rules"), ("maa123", "object-proxy-rs"),
+    ("macclash", "macclash.github.io"), ("macnum", "linkedList"), ("macosta88", "Splunk-Dashboard-for-SSH-Logs"),
+    ("madeye", "meow-ios"), ("mage2sk", "module-low-stock-notification"), ("mage2sk", "module-price-drop-alert"),
+    ("magicspellnosejob374", "flaregun"), ("mahan403", "v2ray"), ("mahazoualedji595", "secure_multisite_vpn"),
+    ("mahdi-turrkk", "x-ui-panel-manager"), ("mahdibland", "Node-Collector"), ("mahdibland", "ShadowsocksAggregator"),
+    ("mahdibland", "V2RayAggregator"), ("mahdisandughdaran-sys", "-My-SS2022-Collector"), ("mahdisandughdaran-sys", "V2ray-sub"),
+    ("mahdisandughdaran-sys", "vless-reality-collector"), ("mahdizynali", "jimbo-v2ray"), ("mahkoh", "wl-proxy"),
+    ("mahmudzgr", "altin-proxy"), ("maiyulao", "ResoHub"), ("maku85", "my-awesome-js-tools"),
+    ("malcolm-proxy", "malcolm"), ("malfy-driller", "vpn-builder-"), ("malfy-driller", "vpn-builderV2"),
+    ("mamun1978", "__2026_03_14_chihlee_gemini__"), ("manavkushwaha10", "apple-health"), ("mano4now", "plant-protect"),
+    ("mansar1337", "ShadowProxy"), ("manzarifardmohamad-tech", "kia-vpn-bot"), ("maomao533", "jichangtizi-tuijian"),
+    ("maomao533", "xingjiabijichang"), ("mapleafgo", "clash-for-flutter"), ("marcelz0", "uTPro"),
+    ("marchellino2001", "caffe-ssd-face-detector"), ("marckrenn", "claude-code-changelog"), ("marco97pa", "MostSubYTMusicChannels"),
+    ("marcusbandit", "anirss"), ("marcusc9", "Clara-sStories"), ("mariadelapazj2155", "nginx-proxy-manager-api"),
+    ("marouchsail", "aigateway"), ("marshall888666", "free_clash_subscribe"), ("martinengstrom", "ssi-calendar"),
+    ("marvinli001", "ClashMax"), ("maryamsohail32", "ChestXRay-CNN-Temporal-Analysis"), ("masafykun", "claude-ssh-mcp-safety"),
+    ("maskedeken", "v2ray-config"), ("masseuseherpetology481", "keygate"), ("massimoalbertoli-arch", "school-calendar-proxy"),
+    ("masterlog80", "skytg24-proxy-copilot"), ("matiassppeed-stack", "gemini-watermark-remover-editghost"), ("matrixsy", "cf_ech_worker"),
+    ("matsurinode", "matsurinode.github.io"), ("mattboys", "ssh-chat"), ("matthewgall", "doh-proxy"),
+    ("matthiastjong", "shellgate"), ("mattklee123", "ssa-pmo-analyst"), ("maurice2k", "ab-proxy"),
+    ("mauricegift", "free-proxies"), ("maxstev72", "Zero-Trust-Auth-Service"), ("maxvipon", "la-status"),
+    ("mayank164", "loveFreeTools"), ("mayank24343", "PIS2026-Group16-ArduinoLogic"), ("maycon", "tor-nodes-list"),
+    ("mayerhany32", "litchi_claude_code"), ("mc-marcocheng", "site-to-rss"), ("mc256", "honkai-rule-server"),
+    ("mchernigin", "teleport"), ("mdabushayem62", "plex-playlists"), ("mdesantis", "ssr-deno"),
+    ("meestergijss", "TsjaadRoyale"), ("mehdi9097f", "Netopenbook"), ("mehdihoore", "TestVpnGateServers"),
+    ("mehdikarimifa", "v2ray-config-finder-tg-bot"), ("mehdirzfx", "v2ray-sub"), ("mehrancardtr-cpu", "ReMIX"),
+    ("mehrdadmb2", "v2ray-telegram-collector"), ("mekzqza", "ClashOfBlox"), ("memory9596", "clash_rule"),
+    ("menasamuel1835", "Pumpfun-Bundler"), ("menchbaz", "free-proxy"), ("menhera-org", "menhera-ssg"),
+    ("mfonectrl-bit", "rss-proxy"), ("mfuu", "v2ray"), ("mheidari98", ".proxy"),
+    ("mhghco", "v2ray-hub"), ("mhzarchini", "clash-royale-emote-detector"), ("mianfeiclashx", "mianfeiclashx.github.io"),
+    ("mianfeiv2rayx", "mianfeiv2rayx.github.io"), ("michaelf-design", "sf-proxy"), ("microlazy-apps", "lazy-sshx"),
+    ("mightybooks", "ssulgeulnom"), ("miguelporras04", "Bit-cora-T-cnica-IV.-Laboratorio-de-Teletransportaci-n-Digital-SSH-y-RDP-"), ("mihomo-party-org", "clash-party"),
+    ("mike-asuncion", "mph-ai-site-checker"), ("mikuji98", "BiG-Hacking"), ("miladtahanian", "Config-Collector"),
+    ("miladtahanian", "V2RayCFGDumper"), ("miladtahanian", "V2RayCFGTesterPro"), ("miladtahanian", "V2RayScrapeByCountry"),
+    ("milchee", "vless_subs"), ("militarandroid", "cybersecurity_hack"), ("milliammeterfamilyalligatoridae52", "fly-vpn"),
+    ("minasamuel193", "omni_security_key"), ("mindcrunch4u", "v2ray-reloader"), ("mingcheng", "faure.sh"),
+    ("mingko3", "socks5-clash-proxy"), ("minicoursegenerator", "edu-role-play-proxy"), ("minipie217", "sspxcdo"),
+    ("ministryofjustice", "modernisation-platform-terraform-ssm-patching"), ("miraali1372", "mirsub"), ("miracle-desk", "clash_rule-provider"),
+    ("mishanaverno", "xray-configurator"), ("mivindhani", "Discord-Passwordless-Token-Changer"), ("mizmazegt1-design", "auto-vpngate-configs"),
+    ("mkaminskiy", "shadowrocket"), ("mkmark", "v2ray-config-python"), ("mlagifts2809", "ssa-my-social-security-browser-automation"),
+    ("mm323754", "-agent-"), ("mmahmoudai", "Beyond-IID-Data-A-Proxy-Based-Computational-Study-of-Quantum-Oracle-Sketchin"), ("mmaksim9191", "my-vpn-configs"),
+    ("mmalmi", "nostr-vpn"), ("mmbateni", "armenia_v2ray_checker"), ("mmichaellangelo", "sstex"),
+    ("mmm1h", "clashconfig"), ("mmpx12", "proxy-list"), ("mnr73", "v2ray-to-clash-converter"),
+    ("moad64", "WARP-VPN-browser-extension"), ("moaga0", "proxy"), ("mobinsamadir", "ivpn-servers"),
+    ("mock-server", "mockserver-monorepo"), ("moeinomidali", "v2ray-proxy-service"), ("mofakhrpour", "v2ray-transparent-proxy-gateway"),
+    ("mohadnor", "Auto-deploy-sap-and-keepalive"), ("mohamadfg-dev", "telegram-v2ray-configs-collector"), ("mohamed159753", "vpn-mpls-enterprise-network"),
+    ("mohamedbelasy", "LfsProxy"), ("mohameddorgham32", "open-wire"), ("mohamedweb700-spec", "ss"),
+    ("mohammad-khajeloo", "vpn-bot"), ("mohammadham", "vpn_react_js"), ("mohammedalmuslhi611-max", "mohammed-and-abdalah"),
+    ("mohammmdmdmkdmewof", "v2rayConfigsForYou"), ("mohan-codebase", "the-krisar-academy"), ("mohsenfaraj", "samir"),
+    ("moinugare19", "ssh-client-mcp"), ("moksharth77", "mcp-remnawave"), ("molaei2000", "auto-import-config"),
+    ("molecular-william", "xray-mp-wiki"), ("moni-SST", "sst-ams"), ("monkey6468", "69yun69"),
+    ("monosans", "proxy-list"), ("monosans", "proxy-scraper-checker"), ("monotykamary", "pi-lazy-extensions"),
+    ("moonfruit", "sing-rules"), ("morawd", "jupyter"), ("moriela1", "zero"),
+    ("moritz-physics", "xray-cluster-masses"), ("morteza-v2", "free-v2ray-irancell-config"), ("moshesteiner", "VisualNode"),
+    ("mostafanamv", "timetunnel"), ("mostafasadeghifar", "v2ray-config"), ("mostaghimbot", "FreeV2rayConfig"),
+    ("mostlydev", "cllama"), ("motoneuronrijstafel442", "vless-xhttp"), ("mourya11", "honghongcf-workers-vlesspanel-d1"),
+    ("mov5314", "dataimpulse-vs-decodo"), ("movingcursor", "clearway"), ("moyercus", "moyercus.github.io"),
+    ("mozilla-ai", "otari"), ("mr-r0ot", "telgoogleproxy"), ("mr-ssc", "mr-ssc"),
+    ("mrdear", "learn_agent_with_proxy"), ("mrdear", "my-clash-rules"), ("mrkpjc", "castari-proxy"),
+    ("mrmarzx", "SGV2RAY-TELEGRAM"), ("mrpauk", "singbox2link"), ("mrunderline", "telegram_v2ray_sub"),
+    ("mrvcoder", "V2rayCollector"), ("msgithub1", "localflare"), ("mssHYC", "proxy-panel"),
+    ("muazzamhussain0914", "Job_Portal_Website_-MERN-"), ("muhammadmehdi1656", "ldap_bofs"), ("muhammadumar65000-sudo", "tool"),
+    ("muhnawaz", "Web_Restaurant_frontend"), ("mukeshk3272", "Smart-Routing-Butler-for-OpenClaws"), ("mukeshkannan18", "SSHBot"),
+    ("muks999", "Clash-Vless-convert"), ("mullvad", "mullvadvpn-app"), ("mummerfleshwound733", "sputniq"),
+    ("mumuer1024", "clash-rules"), ("muskd79", "proxy-manager-telebot"), ("mvamarnath", "ClawSight"),
+    ("myPOSpk", "whitelist_obhod"), ("mydocker-repo", "v2ray"), ("myongho02", "SSAK3"),
+    ("mzwaterski", "calendar-subscribe-feed"), ("mzyui", "proxy-list"), ("nagelboi", "DDOS47"),
+    ("naimyc", "Clash-Of-Pantheons"), ("nakranimeet18", "job-portal-main"), ("nakululusatuva", "V2Switch"),
+    ("namtonthat", "apple-health-data"), ("nandapoxy", "proxy-server"), ("nandev04", "EasyList"),
+    ("naseem499379", "mihomo_yamls"), ("nasnet-community", "nasnet-panel"), ("nathanieljulien-a11y", "garden-calendar-proxy"),
+    ("navikt", "entra-proxy"), ("navikt", "hag-dokument-proxy"), ("navikt", "pensjon-selvbetjening-fss-gateway"),
+    ("navikt", "rekrutteringsbistand-stillingssok-proxy"), ("nboltp01", "vpn_test"), ("nbuckley", "vLLM-proxy-for-VS-Code"),
+    ("nckpln", "v2ray-conf"), ("ndamack", "Subscriber-emails"), ("nearai", "inference-proxy"),
+    ("nehrabalar", "white_list_internet"), ("neil1123-vip", "padm"), ("neisii", "weather-proxy"),
+    ("neoiwr", "WS-Proxy-Server"), ("neshat73", "proxycache"), ("netbirdio", "netbird"),
+    ("netbursarlead", "Opera-VPN-Latest"), ("netio896", "v2raysub"), ("netzbegruenung", "all-llama-proxy"),
+    ("newbie-learn-coding", "free-proxy-list"), ("newsdumpdaily", "youtube-upload-proxy"), ("nextrizon", "Vless-Hysteria-OpenWrt"),
+    ("nfsarch33", "agentic-ecommerce-web"), ("ngathit7", "v2flare"), ("ngoclee280907-bot", "LeThiNgocLe_B25DTCN277_CSDL_ss12_mnpj"),
+    ("nguyenduccanh1523", "agent-ssa-fe"), ("nguyenhoangan20122007-cpu", "K25_DATABASE_SS13-1"), ("nguyenhoangan20122007-cpu", "K25_DATABASE_SS13-2"),
+    ("nguyenhoangan20122007-cpu", "K25_DATABASE_SS13-3"), ("nguyenhoangan20122007-cpu", "K25_DATABASE_SS13-4"), ("nguyenhoangan20122007-cpu", "K25_DATABASE_SS13-5"),
+    ("nicatnesibli", "pingoo"), ("nichind", "v2ray2proxy"), ("nickkitovsky", "geosite-NoADS_RU"),
+    ("nicky8258", "content_replace"), ("nikit0sik2012", "ProximaVPN"), ("nikita29a", "FreeProxyList"),
+    ("nikkinikki-org", "OpenWrt-nikki"), ("niknar1922", "app-ssg-production"), ("nils2-lab", "71-Sch-sse"),
+    ("nimaqalizadeh", "ai-gateway-api"), ("ninggee", "clash_to_hosts"), ("ningjx", "Clash-Rules"),
+    ("ninjastrikers", "nexus-nodes"), ("niq0n0pin", "v2rayfree-nice-tracker"), ("nirui", "sshwifty"),
+    ("nishitha161207", "snake-clash"), ("nitrogendioxide782-jpg", "xray-zkml"), ("njh", "ruby-mqtt"),
+    ("nma12323", "snip"), ("nmvr2600", "tiny-llm-proxy"), ("nnemirovsky", "sluice"),
+    ("noahkostesku", "ferroflow"), ("noayyy-sudo", "ssh"), ("nobodysclown", "clash-rules"),
+    ("nodeclashx", "nodeclashx.github.io"), ("nodesfree", "clashnode"), ("nodesfree", "nodesfree.github.io"),
+    ("nodesfree", "v2raynode"), ("nodessr", "nodessr.github.io"), ("nodev2rayclash", "nodev2rayclash.github.io"),
+    ("nodev2rayn", "nodev2rayn.github.io"), ("nomadturk", "vpn-adblock"), ("nomyself1990", "clash-rules"),
+    ("nonobaum24-hue", "Capital-Clash"), ("noobj2", "Personal-Worker-Sub"), ("noon21000", "Pure-VPN-Crack-2026"),
+    ("notarun", "caddy-nomad-sd"), ("notfaj", "ester"), ("novcky", "v2rayCustomRoutingList"),
+    ("noxi401", "vpn-server-provider"), ("nozikov", "vless-relay-setup"), ("nr3390-collab", "my-proxy"),
+    ("nruggieri-poland", "athletics-ics-proxy"), ("nsiod", "nsp"), ("nthack", "Shadowrocket-ADBlock-Rules-Easy"),
+    ("nuggetenak", "Nugget-Nihongo-SSW-Konstruksi"), ("nurob-l", "clash-rules"), ("nvhopo", "dataimpulse-vs-smartproxy-review"),
+    ("nyarvex", "proxy_start"), ("nyeinkokoaung404", "V2ray-Configs"), ("nyeinkokoaung404", "multi-proxy-config-fetcher"),
+    ("nymtech", "nym-vpn-client"), ("nyt213", "police-chat-bot"), ("nzea243", "ikoV31tud_vpn"),
+    ("officevpn", "officevpn.github.io"), ("officialmzstudio", "Python_Telegram_Bot"), ("officialputuid", "ProxyForEveryone"),
+    ("ogt-tools", "ogt-data-proxy"), ("ojovirtual", "v2ray-configs"), ("okamooo", "type-clash-backend"),
+    ("okning", "domain-list"), ("okwn", "Agent-Pulo"), ("olympiangamesgenussynchytrium730", "dokploy-tailscale-webhook-relay"),
+    ("ombluetuneAI", "V2RayAggregator"), ("one-chance", "dotol-ssr"), ("onion108", "onion-v2ray-subscription-to-clash-converter"),
+    ("onl35461-debug", "Accelerator-node-ladder---VPN"), ("onl35461-debug", "Free-ladder---VPN"), ("onl35461-debug", "Node-Airport---VPN"),
+    ("onl35461-debug", "Node-climbing-wall-ladder---VPN"), ("onl35461-debug", "Wall-climbing-ladder-VPN"), ("onlymeoneme", "v2ray_subs"),
+    ("onvre-pixel", "frilink"), ("ooocode", "CoreProxyServer"), ("openclashnode", "openclashnode.github.io"),
+    ("openlay", "openlay-vpn-release"), ("openproxyhub", "proxy-exports"), ("opensa13-bot", "MTProto"),
+    ("opensa13-bot", "MTProto-Yurich"), ("opti4riponty-arch", "VLESS-Co"), ("ordinaryjoe0", "MyClashConfig"),
+    ("orquestio", "deploy"), ("oscarshrek9", "Cloud-Native-Load-Balancer"), ("oslokommune", "okdata-log-group-subscriber"),
+    ("otandon", "trojan_market"), ("othyn", "go-calendar"), ("outlinenode", "outlinenode.github.io"),
+    ("outofprint-statesgeneral134", "the-infinite-crate"), ("ovens2020", "-_TRX-"), ("owocc", "vercel-image-proxy"),
+    ("oxivanisher", "role-ssh_keys"), ("oxivanisher", "role-ssh_server"), ("p4u", "claude-proxy"),
+    ("pachangcheng", "mianfeijiedian"), ("pacnpal", "tunnelsmith"), ("paidvpn", "paidvpn.github.io"),
+    ("palamist", "win-mediakey-lolbin"), ("panbinibn", "OpenPacketFix_"), ("pandemic-xanthicacid21", "mcp-time-travel"),
+    ("pankajpatel", "list-repos"), ("papapapapdelesia", "Emilia"), ("papura-octavian", "APIShield"),
+    ("parsamrrelax", "auto-warp-config"), ("parserpp", "ip_ports"), ("partitive-comma396", "nayuyyyu"),
+    ("partnermbp", "RUS_VLESS"), ("partnermbp", "VLESS_RUS"), ("passengerious", "ssg-sanity"),
+    ("patel-Asan", "SSC1"), ("paul726", "FastNet"), ("paul86Wilson", "ssdjis8aorobertsusan43271"),
+    ("paulopmr07", "meu-proxy"), ("peasoft", "NoMoreWalls"), ("peng-123258", "python-argo"),
+    ("penhandev", "AutoAiVPN"), ("pepitopere666", "WireTapper"), ("peptang12", "pingap-docker-provider"),
+    ("pero082", "wg-orchestrator"), ("pete731", "sati"), ("petehiltonjr", "VM-SSP-Daily-Dash"),
+    ("pf123120", "clash-rules-txt-to-mrs"), ("pg-sharding", "spqr"), ("pgdad", "envoy-go"),
+    ("pgwiz", "PowerShellSSigner"), ("phamdung18", "PhamVietDung__B25DTCN321_SQL_Ss13_B1"), ("phamdung18", "PhamVietDung__B25DTCN321_SQL_Ss13_B2"),
+    ("phamdung18", "PhamVietDung__B25DTCN321_SQL_Ss13_B3"), ("phamdung18", "PhamVietDung__B25DTCN321_SQL_Ss13_B4"), ("phamdung18", "PhamVietDung__B25DTCN321_SQL_Ss13_BTTH"),
+    ("phanminhquang892-hash", "CSDL_phanminhquang_ss13_b-i1"), ("phanminhquang892-hash", "CSDL_phanminhquang_ss13_b-i2"), ("phanminhquang892-hash", "CSDL_phanminhquang_ss13_b-i3"),
+    ("phanminhquang892-hash", "CSDL_phanminhquang_ss13_b-i4"), ("phanminhquang892-hash", "CSDL_phanminhquang_ss13_btth"), ("phanminhquang892-hash", "CSDL_phanminhquang_ss13_xmind"),
+    ("phildorcorriz", "Go-Blockchain-Suite"), ("philmillman", "M0SSFlash"), ("php-curl-class", "php-curl-class"),
+    ("phpvortex", "php-v2ray-manager"), ("piegian99ita", "clashMacacos"), ("pingbiqi", "GPS-shield-jammer-cellphone-signal-blocker"),
+    ("pingbiqi", "Mobile-Phone-Signal-Jammer-5G-LTE-Shielding-System-Pro"), ("pingbiqi", "shoujixinhaopingbiqi"), ("pipiilgatto", "PipiSeek"),
+    ("pixmason", "NetworkProxy"), ("pkd11011", "xray"), ("platonic-gaelic239", "Emby-In-One"),
+    ("pleme-io", "aresta"), ("plowsof", "check-monero-seed-nodes"), ("plsn1337", "white-vless"),
+    ("pluiez", "clash-rules"), ("pnv06", "betterclaude-workers"), ("po4yka", "RIPDPI"),
+    ("poad", "get-aws-ssm-parameter"), ("poad", "react-router-ssr-lambda"), ("podaac", "l2ss-py"),
+    ("poeolwkand647483", "Blockchain-Solidity-Advanced-Suite-2026"), ("poetic-macroglia442", "openclaw-desktop-launcher"), ("pog7x", "vpn-configs"),
+    ("pogiako123pak", "go-ssh"), ("pojiezhiyuanjun", "freev2"), ("pomerium", "torbulkexitlist"),
+    ("pornnewbee", "free-vless-VPN"), ("pouyawhite", "config"), ("praghour", "domino"),
+    ("prasanna7codes", "Grow-Cursor-Backend"), ("prathvikothari", "HLS-Proxy-Worker"), ("praxis-proxy", "praxis"),
+    ("preetcse", "vless-xtls-vision-installer"), ("prima32", "warp-config-generator-vercel"), ("primeZdev", "Emergency-key"),
+    ("procrastinando", "mindbloat-bot"), ("professionalvpn", "professionalvpn.github.io"), ("proud-persiangulf507", "ripgrep-node"),
+    ("proxifly", "free-proxy-list"), ("proxifly", "v2ray-subscription"), ("proxygenerator1", "ProxyGenerator"),
+    ("proxyguide", "jichang-recommend"), ("proxypal", "proxy-configs"), ("proxystore11", "v2ray-config-collector"),
+    ("pschichtel", "poeditor-proxy"), ("psyb0t", "aichteeteapee"), ("punez", "proxy-collector-a"),
+    ("purefunsolutions", "riski5"), ("purpletigerlzhlcgg", "ethereum-event-tracker"), ("pustynsky", "xray"),
+    ("pvginkel", "SSEGateway"), ("pwhkk", "pyxy"), ("pwittchen", "aictl"),
+    ("pworuwikaxb646473", "RubyChain-Nexus"), ("python-net-dev", "network-test"), ("qRuWGQ", "rules"),
+    ("qaderizadeh", "v2ray-docker-win"), ("qaz69s", "vmess-wss-rs"), ("qdm12", "gluetun"),
+    ("qichi77", "SSE-DDI"), ("qimingbo", "javaSE_SSM_SpringBoot_"), ("qindinp", "keypool"),
+    ("qinhuis", "OpenClash"), ("qiqi777iii", "my-surge-rules"), ("qist", "xray"),
+    ("qiufeihai", "vless"), ("qolbudr", "proxy-checker"), ("qopq1366", "VlessConfig"),
+    ("qozx", "cursor-grpc"), ("qq547820639", "tiktok-ad-video-skill"), ("quangtrieu1312", "masque-vpn"),
+    ("quantumultxfree", "quantumultxfree.github.io"), ("quesoXD12", "nordvpn-wg"), ("quixabeira-rafael", "mitm-tracker"),
+    ("qwIvan", "clash-sub-to-singbox"), ("qwerty197688-blip", "max-proxy"), ("qyracreative", "Clashlore-Battle"),
+    ("r00tee", "Proxy-List"), ("r2d4m0", "vless-parser"), ("r44gh4v", "sst-genai-ass-3-RAG-NotebookLM"),
+    ("r4sso", "r4sso"), ("r9s-ai", "open-next-router"), ("ra7701", "aulite"),
+    ("rabbinur71", "chest-xray-onnx-validation-pipeline"), ("rachelkuo8888-blip", "nova-api"), ("radw807", "dataimpulse-vs-brightdata"),
+    ("rafa-99", "ssb"), ("rafaumeu", "budgetbuddy"), ("raffaeler", "mindthegap"),
+    ("ragesh28", "ALL_CAREER"), ("ragul-selvakumar-tt0463", "ReflectionApi_DynamicProxy"), ("raidal", "v2ray-rules"),
+    ("railwayapp-templates", "postgres-ssl"), ("rainer78", "regencreatives-sseg"), ("rainwatershilling272", "Fortnite-Premium-External"),
+    ("rakibkumar151", "auto-proxy-updater"), ("ramby066-pixel", "v2ray-configs"), ("ramram33", "Ram-v2ray-configs"),
+    ("rancher", "remotedialer-proxy"), ("ranin990sa-ux", "ss"), ("rankalpha", "v2ray_sub"),
+    ("rankedcs", "Myvlesses"), ("raphaelgoetter", "clash"), ("rasool083", "v2ray-sub"),
+    ("rastgoo", "v2ray"), ("raya-ac", "Layerline"), ("razoshi", "v2ray-configs"),
+    ("rb360full", "V2Ray-Configs"), ("rbym13403-hue", "Ss"), ("re-f", "v2rays"),
+    ("realbabafingo", "gatepath-threat-model"), ("realrolfje", "podfix"), ("redondoc", "wsj-zh-rss-proxy"),
+    ("relc112885", "aws-tally-backup-fsx-hybrid-architecture"), ("remcovanmook", "hu-mon"), ("reminis0509-cyber", "llm-trace-lens"),
+    ("renachiouo", "vspo-proxy"), ("renhaibin17", "ren-my-v2ray-sub"), ("revenantguttaperchatree773", "Onvoyage-Ai-Testnet-farm"),
+    ("rezapix-cmd", "vless-checker-55"), ("rgdan", "IC2001-P1-ClashRoyale"), ("richardg7", "moodle-local_ssologin"),
+    ("richdz12", "traffic-guard"), ("rick930", "sommelier-proxy"), ("rico-cell", "clash-proxy-sub"),
+    ("riconcayy123", "mexc-private-api"), ("rikaaa0928", "V2rayE"), ("ripaojiedian", "freenode"),
+    ("rishikareddy1928", "snake-clash"), ("ritchiearistotelian98", "docker-headscale"), ("rmorlok", "authproxy"),
+    ("roadnich", "ru-v2ray-sub"), ("robintw", "sse_powercuts"), ("rocjay1", "FlareBridge"),
+    ("roderigoambiguous332", "MicroWARP"), ("rogerioritto", "clashroyale"), ("rohanjob", "SSP_Travels"),
+    ("rokoman", "tor_node_list"), ("romangoncharov9101-coder", "proxy-mini-app"), ("romyirl", "chess-daily"),
+    ("ron33tui", "clash-merger"), ("roosterkid", "openproxylist"), ("rorafiftysix26", "First"),
+    ("roriruri9370", "Whitelist-bypass"), ("rose1996iv", "SSFI_Data"), ("rostamimohammadamin8-dot", "Starlink-V2ray-Scanner"),
+    ("rowdy-ff", "javid-mask"), ("roymcfarland", "recollie"), ("rrmmxxuu", "Custom-Clash-Sub-Convert-Config"),
+    ("rrwood", "claude_litellm_proxy"), ("rtwo2", "FastNodes"), ("ru-petrovi4", "Ssz.Utils"),
+    ("ruabbit233", "clash-config-manager"), ("rudinakhan1-dotcom", "insta-lite-proxy"), ("runetfreedom", "russia-v2ray-rules-dat"),
+    ("runoneall", "netlify-v2ray2clash"), ("russ1217", "ssh-audio-player"), ("rvbj796", "social-media-ban-residential-proxy"),
+    ("ryryss2-dev", "vpn-iperf-monitor"), ("rzielenski", "clash-of-clubs"), ("rzilient-club", "vpn-portal"),
+    ("s-h", "llmpylon"), ("s-theo", "Theo-Docs"), ("s-theo", "dotfiles"),
+    ("s-theo", "vpnnav.net"), ("s1kSec", "ghost-bits-analyzer"), ("saTrx", "config"),
+    ("saberalmasi1997-cpu", "Clashh"), ("sabinkatwal", "clashofcode"), ("sadoyan", "aralez"),
+    ("saeed-54996", "V2CS-Bot"), ("safedep", "pmg"), ("sahar-km", "aurora"),
+    ("sajkan81", "ecommerce-template"), ("sakata114", "work"), ("sakha1370", "OpenRay"),
+    ("salmanclever", "v2rconfigfetcher"), ("saltplainjobaction503", "sub-store-workers"), ("samdotola", "mqqt_subscriber"),
+    ("samidii", "ACYBER-Wayback-Machine-Downloader"), ("sammimk830", "sing-box-ruleset"), ("sampreeth15", "ssc"),
+    ("sanaka521", "ClashAi"), ("sanasa-bank-baddegama", "nod"), ("sandyemousy17", "wireguard-hook"),
+    ("sangosbanikz", "proxy-pool"), ("sanmaojichan", "sanmaojichan.github.io"), ("santiagocg02", "SST-Manager"),
+    ("saqi9912", "homelab-vpn-journey"), ("sarthakGudwani200", "Lucid-Subnet"), ("sashalsk", "V2Ray"),
+    ("sathilaperera", "gptoss-proxy"), ("sb090", "tauri-plugin-macos-fps"), ("sbunkov", "shadowrocket-configuration"),
+    ("sc-voice", "sc-api"), ("school1school2-stack", "Abdalmagid"), ("scottlz0310", "mcp-resource-subscribe-test"),
+    ("scriptzteam", "AirVPNWatch"), ("scriptzteam", "AzireVPNWatch"), ("scriptzteam", "IVPNWatch"),
+    ("scriptzteam", "NordVPNWatch"), ("scriptzteam", "PrivateInternetAccessWatch"), ("scy1993", "v2ray"),
+    ("sdfnh", "fanqiang"), ("sdfwch", "clash-config"), ("sdsdsdsdsdsihdkjsdjl", "cursoride2api"),
+    ("seacdr", "clash"), ("sebastian-lortz", "sspLNIRT"), ("selenanett", "clash-worker"),
+    ("selenanett", "v2ray-worker-sub"), ("selfconjurerrelease", "Hamachi-Pro-Crack-2026"), ("selinmouraa-star", "vless"),
+    ("semicolon-ph", "DoomBringer-Wiper-Trojan-Malware-FREE-ROBUX-TROJAN-VIRUS"), ("semitexa", "semitexa-ssr"), ("sengshinlee", "hosts"),
+    ("serbery41-del", "click-clash-overload"), ("serdarseseogullari", "fpl-reminder"), ("serebrena", "vless"),
+    ("sertay1", "WarpZeroTrustConfigure"), ("seto1e", "hkanime-proxy"), ("sevcator", "5ubscrpt10n"),
+    ("seven2six", "clashRule"), ("seyeddex", "proxy"), ("sflaser", "sslaserservice"),
+    ("sgsjsvc", "Nvida-proxy"), ("sh-sh-dev", "extract-v2ray-configs"), ("shaa2020", "V2Ray-Automator"),
+    ("shabane", "kamaji"), ("shadowmere-xyz", "shadowmere"), ("shadowsocks", "ech-tls-tunnel"),
+    ("shadowsocks", "shadowsocks-rust"), ("shafiqsaaidin", "go-csv-to-mysql"), ("shalshcode08", "ss-module-infra"),
+    ("shammay-PC", "Ay-v2Ray-Subscription"), ("shaoyouvip", "free"), ("sharehiddifynext", "sharehiddifynext.github.io"),
+    ("sharetopvpn", "sharetopvpn.github.io"), ("sharkfan824", "vscode-remote-vibe-coding"), ("shawn1986", "app-proxy"),
+    ("sheehyfane", "blockchain-ultimate-js-suite"), ("shekelstrong", "nemo-blog"), ("shenyanshu", "clash-to-v2rayn-converter"),
+    ("sherlockhomes-max", "youtube-viewer-bot"), ("shervinofpersia", "VPN-client-last-releases"), ("shichongzheng", "v2rayfree"),
+    ("shinexus", "LearnToProgram"), ("shirok1", "rules.nix"), ("shitless-secretor385", "ahr999-dataset"),
+    ("shivangsharma270", "proxylysis"), ("shivansh-127", "WanderLust"), ("shivanshsinghsengar", "BizScope-ai"),
+    ("shkelqimspahiu10", "webscraper"), ("shogo82148", "aws-xray-yasdk-go"), ("showmaker9", "clash-rule"),
+    ("shreyanxNova", "RKNHardering"), ("shriman-dev", "dns-blocklist"), ("shubhamshendre", "Free-Proxies"),
+    ("shuguang-cmd", "Tinc-VPN-Client"), ("sibur1703-alt", "my-auto-vpn"), ("sidequesthhh", "RAT-Remote-Acess-Trojan-Remover"),
+    ("sigbit", "mcp-auth-proxy"), ("sigcli", "sigcli"), ("simonwei999", "clash"),
+    ("sinadalvand", "CFScanner"), ("sinahosseini379", "Clash-config"), ("sinasims", "Free-V2ray-Config-"),
+    ("sinavm", "SVM"), ("sinavm", "sinavm"), ("sinemcu", "FAE_embedded_code_generation_SKILL"),
+    ("singboxgithub", "singboxgithub.github.io"), ("singboxwindows", "singboxwindows.github.io"), ("singhayush17", "code-clash-v2"),
+    ("sinspired", "checkip"), ("siphon-project", "siphon"), ("sirok1", "vless-hy2-to-clash"),
+    ("sithu015", "Sub-mm"), ("sjtlehbie", "meow-ssh"), ("skalover32-a11y", "vlf-chrome-proxy"),
+    ("skb648", "vpn-engine"), ("skibidirizz67", "sss"), ("skibiditoilet12341912-eng", "connaxis"),
+    ("skinned-italianpeninsula990", "weclaw-proxy"), ("skka3134", "Free-servers"), ("skylunna", "luner"),
+    ("skyvictordolmen", "Opera-VPN-2026"), ("skywrt", "v2ray-Collector"), ("skywrt", "v2ray-configs"),
+    ("slandx", "v2rayGen"), ("smakotta", "V2rey-cfg"), ("smart-football-table", "smart-football-table-cognition"),
+    ("smartscripts-nl", "dynamic-xray"), ("smartselleraisolutions-lang", "SSAIS"), ("smblue07", "my-v2ray-tools"),
+    ("snakem982", "proxypool"), ("sngvy", "AntiScanner"), ("soapbucket", "sbproxy"),
+    ("socks5-proxy", "socks5-proxy.github.io"), ("sodardyjiber", "DailyProxyCheck"), ("soddygo", "codex-convert-proxy"),
+    ("soheil1405", "generateV2ray"), ("solacecommunity", "solace-prometheus-exporter"), ("solovyov-jenya2004", "all_subs"),
+    ("solovyovever", "VPN_BOT"), ("somiibo", "youtube-bot"), ("songxiaohuo", "clash-rules"),
+    ("sonic0jd", "MasterHttpRelayVPN"), ("sophievu2019-gif", "vless-cf"), ("soroushmirzaei", "V2Ray-configs"),
+    ("soumyaranjanjena007", "indonesia-gov-apis"), ("southpart302", "vless-wizard"), ("souvpn", "souvpn.github.io"),
+    ("sozu-proxy", "sozu"), ("spacehamagent", "ssvpthetford2026"), ("sparshTatiya", "ssl-scraper"),
+    ("spayed-turkmen6590", "netlify-relay"), ("spider1605", "cf-workflow-rollback"), ("spincat", "SmartProxyPipeline"),
+    ("spnovaa", "clash-royale-2D"), ("spoofi", "amnezia-to-sing-box"), ("sqesh57-commits", "hcore"),
+    ("sreckoskocilic", "weeqlash"), ("sreekruthy", "dhrushyam-website"), ("ss44", "ss44"),
+    ("ss44", "ss44.ca"), ("ssaaaammm", "ssaaaammm"), ("ssbanerje", "ssbanerje"),
+    ("ssbaxys", "v2ray-configs"), ("ssccsorg", "ssccs"), ("sscs-ose", "sscs-chipathon-2026"),
+    ("sselimabdelrhman-byte", "sselimabdelrhman-byte.github.io"), ("sseydaltin", "sseydaltin"), ("ssg-create", "ssg-dashboard-data"),
+    ("ssh-Eventix", "Grupi18-SSH-Eventix-Backend"), ("ssmnakade", "ssmnakade.github.io"), ("ssrclash", "ssrclash.github.io"),
+    ("ssrjichang", "ssrjichang.github.io"), ("ssrsub", "ssr"), ("sssituser", "sssitpythonmar2nd7pmbatch"),
+    ("ssvlabs", "ssv-oracle"), ("st94p489", "my_local_calendar_agent"), ("stacksjs", "rpx"),
+    ("stairnode", "stairnode.github.io"), ("stantonadnexal355", "spark-clean"), ("statisticsnorway", "ssb-nudb-use"),
+    ("stdlib-js", "array-mostly-safe-casts"), ("stdlib-js", "array-safe-casts"), ("stdlib-js", "array-same-kind-casts"),
+    ("stdlib-js", "datasets-dale-chall-new"), ("stdlib-js", "datasets-female-first-names-en"), ("stdlib-js", "datasets-liu-negative-opinion-words-en"),
+    ("stdlib-js", "datasets-liu-positive-opinion-words-en"), ("stdlib-js", "datasets-male-first-names-en"), ("stdlib-js", "datasets-month-names-en"),
+    ("stdlib-js", "datasets-primes-100k"), ("stdlib-js", "datasets-savoy-stopwords-fin"), ("stdlib-js", "datasets-savoy-stopwords-fr"),
+    ("stdlib-js", "datasets-savoy-stopwords-ger"), ("stdlib-js", "datasets-savoy-stopwords-it"), ("stdlib-js", "datasets-savoy-stopwords-por"),
+    ("stdlib-js", "datasets-savoy-stopwords-sp"), ("stdlib-js", "datasets-savoy-stopwords-swe"), ("stdlib-js", "datasets-spache-revised"),
+    ("stdlib-js", "datasets-standard-card-deck"), ("stdlib-js", "datasets-stopwords-en"), ("stdlib-js", "dstructs-doubly-linked-list"),
+    ("steam-100", "free-proxy-sub"), ("sternepenitentiary330", "google"), ("stevef1uk", "freeride"),
+    ("stevengiguere1993-coder", "h2.0"), ("stormsia", "proxy-list"), ("str3llbatofficial", "NyxProxyStatus"),
+    ("strikersam", "local-llm-server"), ("strongswan", "strongswan"), ("suanyao", "clash"),
+    ("sub-store-org", "Sub-Store"), ("suba1653", "CFWarpTeamsProxy"), ("subaru12109", "ssh-ai-chat"),
+    ("subscribey48-code", "my-vpn-mirror"), ("sudhans3", "amp-server"), ("suharvest", "claude-code-deepseek-thinking-proxy"),
+    ("suiyuebaobao", "raypilot-xray-panel"), ("sumanrio", "mcp-atlassian-extended"), ("sumiworld", "clashini"),
+    ("summer-heavy-rain", "netFixWithclashVR"), ("supabase", "supabase-js"), ("superchaospc", "xray-relay"),
+    ("supercrypto1984", "api-benchmark-monitor"), ("supermarsx", "sortOfRemoteNG"), ("supernovaria", "triq-calendar"),
+    ("superos", "clash-rules"), ("surdebmalya", "baud-news-ss"), ("suriyasri68", "Ss"),
+    ("sus112112", "PYDNS-Scanner"), ("sushazhi", "clash"), ("sushimariojp", "wisp-proxy"),
+    ("suvadippatra", "ss"), ("suvinson", "Remove-Nth-Node-From-End-of-List"), ("svirmi", "llm-proxy"),
+    ("svpjohji", "NECHAEV_VPN_AGGREGATOR"), ("svsticky", "CommitteeClash"), ("swagsiamese37", "GVRT-Trading-Bot"),
+    ("sweengineeringlabs", "edge"), ("swileran", "v2ray-config-collector"), ("switchYello", "clash_rule"),
+    ("swobuforge", "swobu"), ("swordsmile", "v2ray"), ("swzxu", "Axis"),
+    ("syamsul18782", "xray2026"), ("syunlee66", "proxy-rule"), ("szymonrychu", "oauth2-proxy-admission-controller"),
+    ("szymonsteccc", "ssne_26L"), ("t3rmynal", "fsociety-vpn-docs"), ("taihei-05", "siglume-api-sdk"),
+    ("tailscale", "tailscale"), ("tairimehdi", "tcp-ip-attack-lab"), ("takonorik", "flare-proxy"),
+    ("tangnahuaite", "sing-box_Route-rules"), ("tanujsinghkushwah", "ether-vpn"), ("taurinexd", "shopify-ga4-app"),
+    ("tczee36", "xmr-nodes"), ("tdat207", "K25_DATABASE_SS13_1"), ("tdat207", "K25_DATABASE_SS13_2"),
+    ("tdat207", "K25_DATABASE_SS13_3"), ("tdat207", "K25_DATABASE_SS13_4"), ("tdat207", "K25_DATABASE_SS13_btth"),
+    ("tdat207", "K25_DATABASE_SS13_mindmap"), ("techtimo", "spotmap-proxy"), ("tedovy", "wasteland"),
+    ("tehrzky", "my-tv-v2ray"), ("teknovpnhub", "v2ray-subscription"), ("tendostore", "Tendo-Script-Auto-Installer-X-ray-ZIVPN"),
+    ("tengyiz124", "tag_clash"), ("tepo18", "online-sshmax98"), ("teraka3109", "hls-restream-proxy"),
+    ("terik21", "HiddifySubs-VlessKeys"), ("terraform-ibm-modules", "terraform-ibm-client-to-site-vpn"), ("teslaproduuction", "ClashDomainsList"),
+    ("testbebranin-prog", "v2node"), ("tglaoshiji", "aa"), ("tglaoshiji", "nodeshare"),
+    ("th3weird0", "Claude-IP-Check"), ("thaikhan9717", "3x-ui"), ("thanhcatthugian", "K25_CSDL_QuachTranAnh_ss12_BT1"),
+    ("thanhcatthugian", "K25_CSDL_QuachTranAnh_ss12_BT2"), ("thanhcatthugian", "K25_CSDL_QuachTranAnh_ss12_BT3"), ("thanhcatthugian", "K25_CSDL_QuachTranAnh_ss12_BT4"),
+    ("thanhcatthugian", "K25_CSDL_QuachTranAnh_ss12_BTTH"), ("thanhcatthugian", "K25_CSDL_QuachTranAnh_ss12_BTTH1"), ("thanhcatthugian", "K25_CSDL_QuachTranAnh_ss12_BTTH2"),
+    ("thanhcatthugian", "K25_CSDL_QuachTranAnh_ss12_mindmap"), ("theMavionx", "Clash"), ("theNextTuring", "clashroyalecalculator"),
+    ("theavel", "free-vless-proxy"), ("thebestvpn", "thebestvpn.github.io"), ("theemadd", "V2ray"),
+    ("thefatedefeater", "V2ray-configs2"), ("themiralay", "Proxy-List-World"), ("themrdemonized", "xray-monolith"),
+    ("therealaleph", "Iran-configs"), ("therealaleph", "MasterHttpRelayVPN-RUST"), ("therealaleph", "sni-spoofing-rust"),
+    ("theriturajps", "proxy-list"), ("thesairam", "sssnl"), ("thesoftwarebakery", "plenum"),
+    ("thethtwe-dev", "v2flare"), ("thetime2009", "blynk-proxy"), ("thinzarni", "A365SS"),
+    ("thirtysixpw", "v2ray-reaper"), ("thisara0810", "V2Ray-Render"), ("thorkx", "hockey-proxy"),
+    ("throneproj", "Throne"), ("thuhollow2", "vpngate"), ("thuhollow2", "vpngate-cn"),
+    ("tiagorrg", "vless-checker"), ("tianlimpong710-star", "Ssa-Shader"), ("tickmao", "Rules"),
+    ("tideakatsukiendure", "Mullvad-VPN-Premium-Latest"), ("tienvx", "pact-sse-plugin"), ("tindy2013", "subconverter"),
+    ("tiredvpn", "tiredvpn"), ("tis24dev", "NordVPN-Easy-OpenWrt"), ("tizifanqiang", "tizifanqiang.github.io"),
+    ("tizinode", "tizinode.github.io"), ("tobileng", "vless-ws-cdn-tunnel-setup"), ("todayclashnode", "todayclashnode.github.io"),
+    ("tokastro", "vless-manager"), ("tokenpak", "tokenpak"), ("tokeyjs", "TinySECSGem"),
+    ("tokkkie", "free-model-router"), ("tomaasz", "litellm-free-models-proxy"), ("tomasaap", "python-ai-agent-frameworks-demos"),
+    ("tomicechen", "GUI-Projects"), ("toml66l", "fanqiang"), ("tonygeli", "renew-ssl"),
+    ("tonystrak1001-ops", "free-vpn"), ("toozej", "ghreleases2rss"), ("topsuperv", "ss"),
+    ("topvpntuijian", "topvpntuijian.github.io"), ("torguardvpn", "tgv2ray"), ("tosayn386-dotcom", "ai-news-proxy"),
+    ("toufiqweb", "AI-Model-Hub"), ("touhedulislam", "k8s-proxy"), ("tpmcuong1367-svg", "BTVN-SSS08-IT202"),
+    ("trabict", "my-vpn-configs"), ("traefik", "traefik-library-image"), ("tranhailong012", "windsurf-tools"),
+    ("tranhoanganh2002", "aws-proxy-keys"), ("trauamir-png", "squad-clash26"), ("trio666", "proxy-checker"),
+    ("triposat", "amazon-price-monitor"), ("tristan-deng", "v2rayNodesSelected"), ("troilus", "sstvgallery"),
+    ("trojan-rust", "trojan-rust"), ("tropicoo", "ssh-key-transmitter"), ("troyYKT", "vless-checker"),
+    ("trxd", "shadowsocks-rust"), ("trxd", "trojan"), ("trxd", "v2ray"),
+    ("trxd", "xray"), ("ts-sf", "fly"), ("tsangkin", "ssspi"),
+    ("tsilva", "aipit"), ("ttblstr", "sslv-telegram-monitor"), ("tudo123112312", "wireguard"),
+    ("tullextraterrestrial3175", "ClaudeCode-Model-Rotator"), ("tunmerreclop", "Proxify-PWA"), ("turbine-php", "turbine-proxy"),
+    ("tvvshow", "linuxdo"), ("twj0", "subseek"), ("tylero5029", "MasterDnsVPN-AndroidGG"),
+    ("type-one", "PublishSubscribeESP32"), ("ucmao", "search-ucmao"), ("uesleibros", "wasabi"),
+    ("ulrichlosener", "BayesSSD"), ("ulrichlosener", "BayesianSSD_attrition"), ("uncial-contingence591", "Openclaw_Free"),
+    ("underhax", "mihomo-warp-proxy"), ("unexpear", "chipblocks"), ("unkistudio", "ai-moderator-backend"),
+    ("unnourished-calciumchannelblocker351", "HydraFlow"), ("unton83", "VPS_VPN_PROXY"), ("upbeat-backbone-bose", "easytrojan3.0"),
+    ("uponly-trades", "router-proxy"), ("usipipo", "usipipo_app"), ("utdguy466", "clash-config"),
+    ("uuhan", "codex-api"), ("uykb", "clash-proxy-cleaner"), ("uyuni-project", "uyuni-tools"),
+    ("v0id9", "vpn-configs"), ("v2fly", "domain-list-community"), ("v2fly", "fhs-install-v2ray"),
+    ("v2fly", "v2ray-core"), ("v2ray-clash-ssr", "v2ray-clash-ssr.github.io"), ("v2ray-node", "v2ray-node.github.io"),
+    ("v2rayA", "dist-v2ray-rules-dat"), ("v2rayA", "v2rayA"), ("v2rayA", "v2raya-scoop"),
+    ("v2rayHome", "v2rayHome.github.io"), ("v2rayN", "v2rayN"), ("v2rayN", "v2rayN-Configs"),
+    ("v2rayN", "v2rayN-Releases"), ("v2rayN", "v2rayN-Subscription"), ("v2rayN-release", "v2rayN"),
+    ("v2rayNG-dist", "v2rayNG"), ("v2rayclashnode", "v2rayclashnode.github.io"), ("v2rayclashnodes", "v2rayclashnodes.github.io"),
+    ("v2raydesktop", "v2raydesktop.github.io"), ("v2rayfanqiang", "v2rayfanqiang.github.io"), ("v2rayfree", "v2rayfree"),
+    ("v2rayfreeclash", "v2rayfreeclash.github.io"), ("v2rayjichang", "v2rayjichang.github.io"), ("v2rayjiedian", "v2rayjiedian.github.io"),
+    ("v2raynfree", "v2raynfree.github.io"), ("v2raynnodes", "clashfree"), ("v2raynnodes", "clashnode"),
+    ("v2raynnodes", "v2rayclash"), ("v2raynnodes", "v2rayfree"), ("v2raynnodes", "v2raynnodes.github.io"),
+    ("v2raytuijian", "v2raytuijian.github.io"), ("v2rayufree", "v2rayufree.github.io"), ("vAHiD55555", "vLess"),
+    ("vadic1218", "VPN"), ("vahid162", "proxy-address-mining"), ("vaillancourcoroniti", "blockchain-js-ultimate-toolkit"),
+    ("vakhov", "fresh-proxy-list"), ("validatedpatterns", "vp-sscsi-spc-chart"), ("valnesfjord", "tg-ws-proxy-rs"),
+    ("vancur2021", "my-clash-rule-provider"), ("vanodevium", "node-framework-stars"), ("vargalott", "cheburnet"),
+    ("vasavibusetty", "DyberVPN"), ("vasekaraizarori-dev", "V2man"), ("vasekaraizarori-dev", "m2b3"),
+    ("vatsalmaniar", "SSC_Inventory"), ("vcs6", "vinit"), ("veloryn-intel", "veloryn-xray"),
+    ("venkatkrishna07", "caddy-mcp"), ("veritynoob", "clash_ext"), ("veryhungryface", "ssamG"),
+    ("vfarid", "clash-worker"), ("vfarid", "v2ray-worker-merge"), ("vfarid", "v2ray-worker-sub"),
+    ("vic4728", "clash-list"), ("victorcb2003", "ClashBackEnd"), ("video05", "vpn-qr"),
+    ("vidyanayak19", "SmartListing-AI"), ("vievieng761", "AJAS"), ("vilage777", "my-vpn-su"),
+    ("virgiliomaxillary918", "cfnb"), ("vitalybulganin", "serialize-list-nodes"), ("vitosamin", "CLASHTM"),
+    ("vivaejs", "vivae"), ("vivianalaced749", "vk-calls-tunnel"), ("vkobel", "enclave-credential-gateway"),
+    ("vkpandey82", "mfpublicinfo"), ("vlence", "xray"), ("vless-reality", "vless-reality.github.io"),
+    ("vluma", "free-vpn2clash"), ("vmheaven", "VMHeaven.io-Free-Proxy-List"), ("volegris", "-v2ray"),
+    ("volondsespel-png", "vpn-key-collector"), ("volondsespel-png", "vpn-keys-public"), ("vomw", "AvenCores-goida-vpn-configs"),
+    ("voterol", "QcoldVpn"), ("vovan046kursk-stack", "vless-list1"), ("vpn-2025", "vpn-2025.github.io"),
+    ("vpn-v2ray-sock5", "vpn-v2ray-sock5.github.io"), ("vpn3288", "Chained-Proxy"), ("vpnbaike", "vpnbaike.github.io"),
+    ("vpnbest", "vpnbest.github.io"), ("vpnchi", "vpnchii"), ("vpndoc", "vpndoc.github.io"),
+    ("vpnedge", "vpnedge.github.io"), ("vpnforchrome", "vpnforchrome.github.io"), ("vpngood", "vpngood.github.io"),
+    ("vpngpt", "vpngpt.github.io"), ("vpnios", "vpnios.github.io"), ("vpnlogin", "vpnlogin.github.io"),
+    ("vpnmac", "vpnmac.github.io"), ("vpnnetflix", "vpnnetflix.github.io"), ("vpnopen", "vpnopen.github.io"),
+    ("vpnsingapore", "vpnsingapore.github.io"), ("vpntianxia", "vpntianxia.github.io"), ("vpntizi", "vpntizi.github.io"),
+    ("vpnworld", "vpnworld.github.io"), ("vrnobody", "V2RayGCon"), ("vrnobody", "xraye"),
+    ("vrzdrb", "unified-mihomo-rulesets"), ("vsvavan2", "vpn-config-rkn"), ("vtrixye", "vpn-shop"),
+    ("vungocbaobao", "v2ray-config-finder-tg-bot"), ("vzf652", "best-socks5-residential-proxies"), ("waila1", "apple-id-subscribe-ai"),
+    ("wakaharu999", "clash-royal-ml"), ("waksik000", "Vpnkey2"), ("wallisthundering974", "xr-journal-query"),
+    ("wanghanyong", "ClashRule"), ("wanghao9610", "claude-model-proxy"), ("wangyingbo", "v2rayse_sub"),
+    ("wanwan-doudou", "ai-ssh"), ("wasimeahmed98-coder98", "clash-converter"), ("watchttvv", "free-proxy-list"),
+    ("waxz", "self-hosted-instance-on-cloudflared"), ("way-fu", "free-nodes-auto"), ("wbenit", "CF-vless"),
+    ("wcwang07", "service-proxy-howto"), ("wd210010", "only_for_happly"), ("wdunn001", "codec-supervisor"),
+    ("web028web028-afk", "blockchain-core-suites"), ("webcirque", "v2studio"), ("webmastergom", "gmc-veraset-api"),
+    ("webunblocker", "free-proxy-list"), ("weicoding1006", "proxy-order-api"), ("weiguangchao", "Clash"),
+    ("weisiqian2", "TPC"), ("weivina", "flzt-auto-checkin"), ("wenxig", "dongtai-sub"),
+    ("wenxig", "free-nodes-sub"), ("wernerhl", "bolivia-satellite-proxy"), ("wesleyzilva", "link_ssi"),
+    ("whatisvpn", "whatisvpn.github.io"), ("whilla", "Extracted-repo-ssrf-fix"), ("whoahaow", "rjsxrd"),
+    ("whosy", "v2ray-config"), ("widdix", "attachmentav-sdk-java"), ("widdix", "attachmentav-wordpress"),
+    ("wiggapony0925", "Track"), ("wikm360", "Config-Detector"), ("wikm360", "fragmentbot"),
+    ("wildoaksapothecaryadmin", "squarespace-api-proxy"), ("will-walsh", "abaris-mcp"), ("willoong9559", "trojan-rs"),
+    ("windowsclash", "windowsclash.github.io"), ("windowsv2ray", "windowsv2ray.github.io"), ("winds18", "FluxGate"),
+    ("winston779", "beibeiyun"), ("winston779", "flyingbird"), ("wisebobo", "clashNodes"),
+    ("wiseweb-works", "mern-bookstore"), ("wiyba", "xcli"), ("wizora", "v2ray-configs"),
+    ("wjtyyds", "Custom_Clash"), ("wmgylc", "clash_rule"), ("wnlen", "clash-for-linux"),
+    ("wonglaitung", "fortune"), ("wooms19-del", "ssbon-2factory"), ("worker4556", "vpn-mini-app"),
+    ("worldmarketing02-design", "proxy-master-list"), ("woshishiq1", "my-clash-sync"), ("wowhulson", "jichangtuijian"),
+    ("wpyok168", "c2m"), ("wr69", "auto-jichangbaohuo"), ("wr69", "auto-jichangqiandao"),
+    ("wso2", "product-integrator-websubhub"), ("wubozh", "clash-sub-pages"), ("wujun4code", "clashforge"),
+    ("wukan1986", "cf-nodes-aggregator"), ("wuqb2i4f", "xray-config-toolkit"), ("wustghj", "cursor-deepseek-v4-proxy"),
+    ("wutipongmoph16-stack", "ssj-duty"), ("wuyaos", "OpenClash-Rules"), ("wxglenovo", "1AdGuardHome-Rules-AutoMerge-"),
+    ("wxlfkiNgg", "ClashOfNotifications"), ("x45fh56", "server_clash"), ("x45fh56", "server_clash_v1"),
+    ("xCtersReal", "V2rayFree"), ("xElKaNoNx", "ProxyContractImplementation"), ("xOS", "Config"),
+    ("xZepyx", "conduit"), ("xawir", "warp"), ("xenmate", "mon-ss"),
+    ("xenral", "XenRelayProxy"), ("xflash-panda", "server-mieru-rs"), ("xhy-vscode", "tree-crown"),
+    ("xianyu-sheng", "mcp-vision-proxy"), ("xiaoji235", "airport-free"), ("xiaonancs", "ace-vpn"),
+    ("xiaoyan-io", "clash-meta-config"), ("xiaoyuandev", "clash-for-ai"), ("xibanyahu", "phppachong-freenode"),
+    ("xilakg515", "cheap-residential-proxy-alternatives"), ("xin-huang", "sstar-qr-analysis"), ("xingdawang", "load_balance"),
+    ("xiphiidaeequinox80", "mihomo-upstream-proxy-setup"), ("xituimao", "spider-clash"), ("xky6936", "cheap-datacenter-proxy-dataimpulse"),
+    ("xolirx", "xolirx-vpn2.0"), ("xq-tec", "hdl-simulation-protocol"), ("xq1337", "proxy-list1337"),
+    ("xrkorz", "clash-verge-rules-sync-template"), ("xrkorz", "codex-proxyman-auto-replay"), ("xscosa400-wq", "universal-flutter-ssl-pinning"),
+    ("xtclovver", "RKNHardering"), ("xteamlyer", "opera-proxy"), ("xtrcode", "ovpn.com-ip-grabber"),
+    ("xtrime-ru", "antizapret-vpn-docker"), ("xuanranran", "rely"), ("xuebuhuiya", "SSQ"),
+    ("xuerake", "my-clash-sync"), ("xusos", "v2ray-config-online"), ("xvolld", "xvolldv2rayserver"),
+    ("xxAlizzamxx", "FincaOS_Trojan_Horse"), ("xxx3-lab", "ahiteo-vpn"), ("xyfqzy", "free-nodes"),
+    ("y-Adrian", "db-proxy"), ("y7007y", "TG-Proxy-Hunter"), ("yabalababoom", "ygkkk_vless_auto"),
+    ("yafeisun", "v2raynode"), ("yahoosony81-sys", "subscribe-pt"), ("yama7120", "jwc-bot"),
+    ("yang05130", "clash"), ("yanjinbin", "clashnodeeditor"), ("yanll-xray", "xray-extinction-model"),
+    ("yarik88", "ToporVPN"), ("yashlatiwal", "ssc-reddit-monitor"), ("ydsgangge-ux", "daidi"),
+    ("yebekhe", "Config-Collector"), ("yebekhe", "TelegramV2rayCollector"), ("yebekhe", "V2Hub"),
+    ("yeemelya77", "Servers"), ("yegetables", "clash-and-dns-config"), ("yespresso80", "yespresso-proxy"),
+    ("yihuangswust-alt", "SSL-Morph_MIL"), ("yiohoohoo2026", "format-proxy"), ("yixuan45", "airport_web"),
+    ("yjdwbj", "build-firmware-by-action"), ("yoiambugger", "auto-vless-config"), ("yokeay", "gidy-client"),
+    ("yonggithub", "AutoCreateConfigScriptForV2R"), ("yonghengdiao", "Merge-bot-Gui"), ("yosh95", "ssm-latent-rs"),
+    ("yosik1992", "proxy-grabber."), ("you-oops-dev", "ipranges-shadowsocks"), ("youbin777", "clash"),
+    ("youfoundamin", "V2rayCollector"), ("youkatalo123-star", "ComfyUI_RH_VoxCPM"), ("yoyoraya", "subgenerator"),
+    ("ypxiaxia", "ssg-react"), ("yrteresr", "ljg-skill-xray-article"), ("yuanjv", "proxy-urls"),
+    ("yuanwangokk-1", "clash-converter"), ("yuanwangokk-1", "subscribe"), ("yuanxiawan", "freevless"),
+    ("yuezk", "GlobalProtect-openconnect"), ("yugoiiii", "etfedge-proxy"), ("yunusalemu", "Proxy-Manager"),
+    ("yunuseyvz", "piis_ss26"), ("yylt", "tul"), ("yzj001", "subscribeconvert"),
+    ("z2531102845", "clash"), ("zackprawaret", "MiddleFreeWare"), ("zaishe-crypto", "Best-Tiktok-human-bot"),
+    ("zaiyin", "metaclsh-scraper"), ("zangge8855", "NMS"), ("zaxbon", "vpn-app-releases"),
+    ("zchhh17", "260401-shulng-cf-worker-vless"), ("zerocluster", "proxy"), ("zeyadjabo", "clash-of-captains"),
+    ("zeyuShawn", "codex-mimo-proxy"), ("zhafarrel", "Network-Clash"), ("zhaopengxin", "V2Ray"),
+    ("zhaozzq", "clash-rules"), ("zheshirenling", "test_open_clash"), ("zhf883680", "clash-subscription-manager"),
+    ("zhou-jian-qq", "Clash-Hub"), ("zhuang-xd", "my-clash-node"), ("zhusaidong", "clashgithub"),
+    ("zilaijuan", "proxy-convert-go"), ("ziyan-c", "ansible-infra"), ("ziyilam3999", "monday-bot"),
+    ("zjj10086", "sssssss"), ("zl125798934", "epos-ai-assistant"), ("zloi-user", "hideip.me"),
+    ("zlylong", "proxygw"), ("zohrelotfi051", "Z_vercell"), ("zoreu", "proxyssl"),
+    ("zotabros", "pm-scrum"), ("zpc1314521", "PCL2"), ("zphiliam", "mctl"),
+    ("zszszszsz", ".config"), ("zuiwuchang", "xray-webui"), ("zw963", "asuswrt-merlin-v2ray"),
+    ("zxsman", "clashfree"), ("zz-want2sleep", "daily-gist"), ("zzmy1917-svg", "cheap-vpn-airport"), ("zzz6839", "PROXY-PROVIDERS-SYNC")
+])))
+
+# ============================
+# 🧰 بخش ۳: ابزارها، الگوها و BranchManager
+# ============================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.FileHandler("collector.log", "w", "utf-8"), logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+V2RAY_CONFIG_PATTERN = re.compile(
+    r'(?:vless|vmess|trojan|ss|ssr|hysteria|hysteria2|tuic|juicity)://[^\s`\'"]+',
+    flags=re.IGNORECASE
+)
+SUB_LINK_PATTERN = re.compile(
+    r'https?://[^\s`\'"]+\.(?:txt|yaml|yml|json|conf)[^\s`\'"]*',
+    flags=re.IGNORECASE
+)
+
+class BranchManager:
+    def __init__(self, base_branches: list, file_path: str):
+        self.file_path = file_path
+        self.base_branches = set(base_branches)
+        self.discovered_branches = set()
+        self._lock = asyncio.Lock()
+        self._load()
+
+    def _load(self):
+        if os.path.exists(self.file_path):
+            try:
+                with open(self.file_path, 'r', encoding='utf-8') as f:
+                    saved = json.load(f)
+                    if isinstance(saved, list):
+                        self.discovered_branches = set(saved)
+            except Exception as e:
+                logger.warning(f"Could not load discovered branches: {e}")
+
+    def _save(self):
+        try:
+            with open(self.file_path, 'w', encoding='utf-8') as f:
+                json.dump(list(self.discovered_branches), f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save discovered branches: {e}")
+
+    @property
+    def active_branches(self) -> Set[str]:
+        return self.base_branches | self.discovered_branches
+
+    async def add(self, branch: str):
+        if branch in self.base_branches or branch in self.discovered_branches:
+            return
+        async with self._lock:
+            if branch not in self.base_branches and branch not in self.discovered_branches:
+                self.discovered_branches.add(branch)
+                self._save()
+                logger.info(f"🌿 New branch saved: '{branch}' (will be used in future runs)")
+
+branch_manager = BranchManager(COMMON_BRANCH_NAMES, CONFIG_DEFAULTS["DISCOVERED_BRANCHES_FILE"])
+ACTIVE_BRANCHES = branch_manager.active_branches
+
+# ============================
+# 📊 بخش ۴: مدیریت Rate Limit (با پرچم توقف خودکار)
+# ============================
+RATE_STATE = {
+    'search': {'remaining': 30, 'reset': 0.0, 'last_checked': 0.0, 'paused_until': 0.0},
+    'core':   {'remaining': 5000, 'reset': 0.0, 'last_checked': 0.0, 'paused_until': 0.0},
+}
+TOTAL_CORE_USED = 0
+CORE_LIMIT_REACHED = False
+RATE_API_LOCK = asyncio.Lock()
+
+async def check_rate_limit(session: aiohttp.ClientSession, headers: dict, resource_type: str = 'core', force: bool = False):
+    global TOTAL_CORE_USED, RATE_STATE, CORE_LIMIT_REACHED
+    now_ts = time.time()
+    state = RATE_STATE[resource_type]
+    min_interval = CONFIG_DEFAULTS["RATE_CHECK_MIN_INTERVAL"]
+
+    if state['paused_until'] and now_ts < state['paused_until']:
+        wait = state['paused_until'] - now_ts
+        logger.warning(f"[RateLimit] {resource_type.upper()} Paused. Sleeping {int(wait)}s")
+        await asyncio.sleep(wait)
+        state['paused_until'] = 0.0
+        return
+
+    if not force and (now_ts - state['last_checked'] < min_interval):
+        return
+
+    async with RATE_API_LOCK:
+        now_ts = time.time()
+        if not force and (now_ts - state['last_checked'] < min_interval):
+            return
+
+        state['last_checked'] = now_ts
+        try:
+            async with session.get("https://api.github.com/rate_limit", headers=headers, timeout=15) as resp:
+                if resp.status != 200:
+                    logger.warning(f"[RateLimit] /rate_limit returned {resp.status}, sleep 65s")
+                    await asyncio.sleep(65)
+                    return
+
+                data = await resp.json()
+                resource = data.get('resources', {}).get(resource_type, {})
+                remaining = resource.get('remaining')
+                reset = resource.get('reset', 0)
+
+                if remaining is None:
+                    return
+
+                if resource_type == 'core':
+                    delta_used = state['remaining'] - remaining
+                    if delta_used > 0:
+                        TOTAL_CORE_USED += delta_used
+
+                state['remaining'] = remaining
+                state['reset'] = float(reset)
+
+                logger.info(f"[RateLimit] {resource_type.upper()} Remaining: {remaining} | Total Core Used (Est): {TOTAL_CORE_USED}")
+
+                threshold = CONFIG_DEFAULTS["RATE_LOW_THRESHOLD"] if resource_type == 'core' else 2
+                is_low_remaining = remaining < threshold
+                is_over_budget = (resource_type == 'core') and (TOTAL_CORE_USED >= CONFIG_DEFAULTS["TARGET_CORE_CONSUMPTION"])
+
+                if is_low_remaining or is_over_budget:
+                    if resource_type == 'core':
+                        if not CORE_LIMIT_REACHED:
+                            logger.warning("🛑 Core limit reached! Will stop scanning and finalize soon.")
+                            CORE_LIMIT_REACHED = True
+                        return
+                    else:
+                        wait_time = max(CONFIG_DEFAULTS["RATE_SLEEP_ON_LOW"], state['reset'] - now_ts + 5)
+                        logger.warning(f"[RateLimit] Low SEARCH. Pausing {int(wait_time)}s")
+                        state['paused_until'] = now_ts + wait_time
+                        await asyncio.sleep(wait_time)
+                        state['paused_until'] = 0.0
+        except Exception as e:
+            logger.error(f"[RateLimit] Error checking: {e}. Sleep 65s")
+            await asyncio.sleep(65)
+
+# ============================
+# 💾 بخش ۵: پایگاه داده و کش (اصلاح‌شده)
+# ============================
+class CacheManager:
+    def __init__(self, cache_file: str, expiry_days: int):
+        self.cache_file = cache_file
+        self.expiry_days = expiry_days
+        self.cache: Dict[str, float] = self._load_cache()
+
+    def _load_cache(self) -> Dict[str, float]:
+        if not os.path.exists(self.cache_file):
+            return {}
+        try:
+            with open(self.cache_file, 'r', encoding='utf-8') as f:
+                raw_cache = json.load(f)
+            now_ts = datetime.now(timezone.utc).timestamp()
+            expiry_limit_ts = (datetime.now(timezone.utc) - timedelta(days=self.expiry_days)).timestamp()
+            cleaned = {url: ts for url, ts in raw_cache.items() if isinstance(ts, (int, float)) and ts >= expiry_limit_ts}
+            if len(raw_cache) != len(cleaned):
+                logger.info(f"Cache: Cleaned {len(raw_cache) - len(cleaned)} expired entries.")
+            return cleaned
+        except Exception:
+            return {}
+
+    def _save_cache(self):
+        try:
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
+                json.dump(self.cache, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving cache: {e}")
+
+    def is_cached(self, url: str) -> bool:
+        return url in self.cache
+
+    def add(self, url: str):
+        self.cache[url] = datetime.now(timezone.utc).timestamp()
+
+_db_connection = None
+
+async def get_db():
+    global _db_connection
+    if _db_connection is None:
+        _db_connection = await aiosqlite.connect(CONFIG_DEFAULTS["DB_FILE"])
+        _db_connection.row_factory = aiosqlite.Row
+        await _db_connection.execute("PRAGMA journal_mode=WAL")
+        await _db_connection.execute("CREATE TABLE IF NOT EXISTS configs (config TEXT PRIMARY KEY)")
+        await _db_connection.execute("CREATE TABLE IF NOT EXISTS urls (url TEXT PRIMARY KEY, processed_at REAL)")
+        await _db_connection.execute("CREATE INDEX IF NOT EXISTS idx_urls_processed_at ON urls(processed_at)")
+        await _db_connection.commit()
+    return _db_connection
+
+async def db_add_configs(configs: Set[str]) -> int:
+    db = await get_db()
+    added = 0
+    for c in configs:
+        try:
+            await db.execute("INSERT OR IGNORE INTO configs (config) VALUES (?)", (c,))
+            added += 1
+        except Exception:
+            pass
+    await db.commit()
+    return added
+
+async def db_mark_url_processed(url: str):
+    db = await get_db()
+    await db.execute("INSERT OR REPLACE INTO urls (url, processed_at) VALUES (?, ?)", (url, time.time()))
+    await db.commit()
+
+async def db_is_url_processed(url: str, expiry_days: int) -> bool:
+    db = await get_db()
+    async with db.execute("SELECT processed_at FROM urls WHERE url = ?", (url,)) as cursor:
+        row = await cursor.fetchone()
+    if row:
+        if expiry_days <= 0:
+            return False
+        processed_at_ts = row[0]
+        expiry_limit_ts = (datetime.now(timezone.utc) - timedelta(days=expiry_days)).timestamp()
+        return processed_at_ts >= expiry_limit_ts
+    return False
+
+async def db_get_all_configs() -> List[str]:
+    db = await get_db()
+    cursor = await db.execute("SELECT config FROM configs")
+    rows = await cursor.fetchall()
+    return [r[0] for r in rows]
+
+# ============================
+# 🧩 بخش ۶: مدیریت Checkpoint
+# ============================
+async def load_checkpoint() -> Dict:
+    try:
+        with open(CONFIG_DEFAULTS["CHECKPOINT_FILE"], "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"processed_urls": [], "searched_queries": [], "scanned_manual_repos": []}
+
+async def save_checkpoint(processed_urls: set, searched_queries: set, scanned_manual: set):
+    data = {
+        "processed_urls": list(processed_urls),
+        "searched_queries": list(searched_queries),
+        "scanned_manual_repos": list(scanned_manual),
+    }
+    with open(CONFIG_DEFAULTS["CHECKPOINT_FILE"], "w") as f:
+        json.dump(data, f)
+
+# ============================
+# 🌐 بخش ۷: توابع اصلی (با فیلتر ساعتی و توقف خودکار)
+# ============================
+def get_github_token() -> str:
+    load_dotenv(dotenv_path=CONFIG_DEFAULTS["ENV_FILE"])
+    token = os.getenv("GITHUB_TOKEN")
+    if not token:
+        logger.error("GitHub token not found in .env file. Please add GITHUB_TOKEN.")
+        raise SystemExit(1)
+    return token
+
+def get_time_filter_query(qualifier: str = 'pushed') -> str:
+    search_days = CONFIG_DEFAULTS.get("SEARCH_PERIOD_DAYS", 0)
+    if search_days <= 0:
+        return ""
+    time_filter_value = datetime.now(timezone.utc) - timedelta(days=search_days)
+    return f" {qualifier}:>{time_filter_value.strftime('%Y-%m-%d')}"
+
+@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError), max_tries=2, max_time=120)
+async def fetch_url_content(session: aiohttp.ClientSession, url: str, headers: dict, semaphore: asyncio.Semaphore) -> Optional[str]:
+    is_core_api = "api.github.com" in url and "/search/" not in url
+    if is_core_api:
+        if CORE_LIMIT_REACHED:
+            return None
+        await check_rate_limit(session, headers, 'core')
+    
+    async with semaphore:
+        try:
+            async with session.get(url, headers=headers, timeout=10, allow_redirects=True) as response:
+                if response.status == 200:
+                    max_bytes = CONFIG_DEFAULTS["MAX_FILE_BYTES"]
+                    size = 0
+                    chunks = []
+                    async for chunk in response.content.iter_chunked(16 * 1024):
+                        chunks.append(chunk)
+                        size += len(chunk)
+                        if max_bytes > 0 and size > max_bytes:
+                            logger.debug(f"Skipping oversize file: {url}")
+                            return None
+                    return b"".join(chunks).decode('utf-8', errors='ignore')
+                elif response.status in (403, 429) and "api.github.com" in url:
+                    logger.warning(f"Rate limit hit for {url}. Forcing check.")
+                    await check_rate_limit(session, headers, 'core' if is_core_api else 'search', force=True)
+                    raise aiohttp.ClientError(f"Rate limit: {response.status}")
+                else:
+                    return None
+        except Exception as e:
+            logger.debug(f"Fetch error {url}: {e}")
+            raise
+
+@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError), max_tries=5, max_time=300)
+async def search_github_api(session: aiohttp.ClientSession, query: str, search_type: str, headers: dict, max_pages: int, semaphore: asyncio.Semaphore, qualifier: str = 'pushed') -> Set:
+    results = set()
+    full_query = f"{query}{get_time_filter_query(qualifier)}".strip()
+
+    async with semaphore:
+        for page in range(1, max_pages + 1):
+            await check_rate_limit(session, headers, 'search')
+            params = {'q': full_query, 'sort': 'updated', 'order': 'desc', 'per_page': 100, 'page': page}
+            try:
+                async with session.get(f"https://api.github.com/search/{search_type}", headers=headers, params=params, timeout=25) as resp:
+                    if resp.status in (403, 429):
+                        await check_rate_limit(session, headers, 'search', force=True)
+                        continue
+                    if resp.status == 422:
+                        logger.warning(f"[Search] Invalid query (422) for: {full_query[:100]}...")
+                        break
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    items = data.get('items', [])
+                    if not items:
+                        break
+                    for item in items:
+                        if search_type == 'repositories' and 'full_name' in item:
+                            try:
+                                owner, repo = item['full_name'].split('/', 1)
+                                results.add((owner, repo))
+                            except Exception:
+                                continue
+                        elif search_type == 'code' and 'html_url' in item:
+                            raw_url = item['html_url'].replace('https://github.com/', 'https://raw.githubusercontent.com/').replace('/blob/', '/')
+                            results.add(raw_url)
+                    if len(items) < 100:
+                        break
+            except Exception as e:
+                logger.warning(f"Search error for '{query}': {e}")
+                break
+    return results
+
+async def get_repo_metadata(session, owner, repo, headers, semaphore) -> Optional[dict]:
+    if CORE_LIMIT_REACHED:
+        return None
+    api_url = f"https://api.github.com/repos/{owner}/{repo}"
+    content = await fetch_url_content(session, api_url, headers, semaphore)
+    if content:
+        try:
+            return json.loads(content)
+        except Exception:
+            pass
+    return None
+
+async def get_tree_for_branch(session, owner, repo, branch, headers, semaphore) -> Optional[dict]:
+    if CORE_LIMIT_REACHED:
+        return None
+    tree_url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
+    content = await fetch_url_content(session, tree_url, headers, semaphore)
+    if content:
+        try:
+            data = json.loads(content)
+            if 'tree' in data:
+                return data
+        except Exception:
+            pass
+    return None
+
+async def get_repo_files(session, owner, repo, headers, semaphore) -> Set[str]:
+    links = set()
+    sub_max_kb = CONFIG_DEFAULTS.get("SUBSCRIPTION_MAX_SIZE_KB", 0) * 1024
+    gen_max_bytes = CONFIG_DEFAULTS.get("GENERAL_FILE_MAX_SIZE_KB", 0) * 1024 or 0
+
+    async def process_tree(tree_data, branch):
+        for item in tree_data.get('tree', []):
+            if item.get('type') != 'blob':
+                continue
+            path = item.get('path', '')
+            path_lower = path.lower()
+            if not path_lower.endswith(('.txt', '.yaml', '.yml', '.md', '.json', '.conf')):
+                continue
+            size = item.get('size', 0)
+            limit = sub_max_kb if path_lower.endswith(('.txt', '.yaml', '.yml')) else gen_max_bytes
+            if limit > 0 and size > limit:
+                continue
+            links.add(f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}")
+
+    repo_data = await get_repo_metadata(session, owner, repo, headers, semaphore)
+    actual_branch = None
+    if repo_data:
+        actual_branch = repo_data.get("default_branch")
+
+    if actual_branch:
+        tree = await get_tree_for_branch(session, owner, repo, actual_branch, headers, semaphore)
+        if tree:
+            await process_tree(tree, actual_branch)
+            if actual_branch not in ACTIVE_BRANCHES:
+                logger.info(f"[BRANCH DISCOVERY] {owner}/{repo} uses '{actual_branch}'")
+                await branch_manager.add(actual_branch)
+        if links:
+            return links
+
+    branches_to_check = set(ACTIVE_BRANCHES)
+    if actual_branch:
+        branches_to_check.discard(actual_branch)
+    for branch in branches_to_check:
+        if CORE_LIMIT_REACHED:
+            break
+        tree = await get_tree_for_branch(session, owner, repo, branch, headers, semaphore)
+        if tree:
+            await process_tree(tree, branch)
+            if links:
+                break
+    return links
+
+async def check_and_scan_repo(session, owner, repo, headers, semaphores, url_set):
+    """
+    اسکن یک مخزن فقط در صورتی که در MAX_AGE_HOURS ساعت گذشته push داشته باشد.
+    """
+    if CORE_LIMIT_REACHED:
+        return
+    repo_data = await get_repo_metadata(session, owner, repo, headers, semaphores['fetch'])
+    if not repo_data:
+        return
+
+    # فیلتر ساعتی دقیق
+    max_hours = CONFIG_DEFAULTS.get("MAX_AGE_HOURS", 0)
+    if max_hours > 0:
+        pushed_at_str = repo_data.get("pushed_at") or repo_data.get("updated_at")
+        if pushed_at_str:
+            try:
+                pushed_at = datetime.fromisoformat(pushed_at_str.replace('Z', '+00:00'))
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_hours)
+                if pushed_at < cutoff_time:
+                    return  # قدیمی است
+            except Exception:
+                pass
+
+    files = await get_repo_files(session, owner, repo, headers, semaphores['fetch'])
+    if files:
+        url_set.update(files)
+
+# ============================
+# 🔍 بخش ۸: پردازش URL و استخراج نهایی
+# ============================
+async def process_url(session, url, headers, processed_urls_session, cache, semaphore, depth=0):
+    if depth > CONFIG_DEFAULTS["MAX_RECURSION_DEPTH"] or url in processed_urls_session:
+        return
+    processed_urls_session.add(url)
+
+    if cache.is_cached(url) or await db_is_url_processed(url, CONFIG_DEFAULTS["CACHE_EXPIRY_DAYS"]):
+        return
+
+    content = await fetch_url_content(session, url, headers, semaphore)
+    if not content:
+        cache.add(url)
+        await db_mark_url_processed(url)
+        return
+
+    found_configs = set()
+    try:
+        found_configs.update(V2RAY_CONFIG_PATTERN.findall(content))
+    except Exception:
+        pass
+
+    try:
+        stripped = content.strip()
+        if 16 <= len(stripped) <= 200000 and re.fullmatch(r'^[A-Za-z0-9_\-=\s/]+$', stripped[:2000]):
+            padding = (4 - len(stripped) % 4) % 4
+            decoded = base64.urlsafe_b64decode(stripped + '=' * padding).decode('utf-8', errors='ignore')
+            found_configs.update(V2RAY_CONFIG_PATTERN.findall(decoded))
+    except Exception:
+        pass
+
+    if found_configs:
+        await db_add_configs(found_configs)
+
+    cache.add(url)
+    await db_mark_url_processed(url)
+
+    if depth + 1 <= CONFIG_DEFAULTS["MAX_RECURSION_DEPTH"]:
+        sub_links = SUB_LINK_PATTERN.findall(content)
+        tasks = [process_url(session, sub, headers, processed_urls_session, cache, semaphore, depth+1)
+                 for sub in sub_links if sub not in processed_urls_session]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+# ============================
+# 🚀 بخش ۹: تابع اصلی (هماهنگ با فیلتر ساعتی)
+# ============================
+async def main():
+    logger.info("🚀 Starting Optimized Collector (Hourly Filter + Auto-Stop)")
+    start_time = time.time()
+
+    token = get_github_token()
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"token {token}",
+        "User-Agent": "OptimizedCollector/2.4"
+    }
+
+    cache = CacheManager(CONFIG_DEFAULTS["CACHE_FILE"], CONFIG_DEFAULTS["CACHE_EXPIRY_DAYS"])
+    fetch_semaphore = asyncio.Semaphore(CONFIG_DEFAULTS["GENERAL_CONCURRENT_REQUESTS"])
+    search_semaphore = asyncio.Semaphore(CONFIG_DEFAULTS["SEARCH_API_CONCURRENCY"])
+
+    checkpoint = await load_checkpoint()
+    processed_urls_session = set(checkpoint.get("processed_urls", []))
+    searched_queries = set(checkpoint.get("searched_queries", []))
+    scanned_manual_repos = set(checkpoint.get("scanned_manual_repos", []))
+
+    connector = aiohttp.TCPConnector(limit=CONFIG_DEFAULTS["AIOHTTP_CONNECTION_LIMIT"])
+    async with aiohttp.ClientSession(connector=connector) as session:
+
+        await check_rate_limit(session, headers, 'core', force=True)
+        core_remaining = RATE_STATE['core']['remaining']
+        core_budget_for_scan = core_remaining - (CONFIG_DEFAULTS["TARGET_CORE_CONSUMPTION"] * 0.3)
+        dynamic_max_scan = max(0, int(core_budget_for_scan / CONFIG_DEFAULTS["CORE_PER_REPO_ESTIMATE"]))
+        final_max_scan = min(CONFIG_DEFAULTS["MAX_DISCOVERED_REPOS_TO_SCAN"], dynamic_max_scan)
+        logger.info(f"Core Remaining: {core_remaining}. Max scan: {final_max_scan}")
+
+        # --- Stage 1: Search ---
+        logger.info("--- Stage 1: GitHub Search (pushed + updated) ---")
+        search_tasks = []
+        for q in REPO_SEARCH_QUERIES:
+            if q not in searched_queries:
+                search_tasks.append(asyncio.create_task(
+                    search_github_api(session, q, 'repositories', headers, CONFIG_DEFAULTS["REPO_SEARCH_PAGES"], search_semaphore, qualifier='pushed')
+                ))
+        for q in CODE_SEARCH_QUERIES:
+            if q not in searched_queries:
+                search_tasks.append(asyncio.create_task(
+                    search_github_api(session, q, 'code', headers, CONFIG_DEFAULTS["CODE_SEARCH_PAGES"], search_semaphore, qualifier='updated')
+                ))
+        for q in EXTRA_UPDATED_REPO_QUERIES:
+            search_tasks.append(asyncio.create_task(
+                search_github_api(session, q, 'repositories', headers, CONFIG_DEFAULTS["EXTRA_UPDATED_REPO_PAGES"], search_semaphore, qualifier='updated')
+            ))
+
+        logger.info(f"Total search tasks: {len(search_tasks)}")
+        search_results = []
+        for fut in tqdm(asyncio.as_completed(search_tasks), total=len(search_tasks), desc="[Stage 1] Searches"):
+            try:
+                res = await fut
+                search_results.append(res)
+            except Exception as e:
+                logger.warning(f"Search task error: {e}")
+
+        for q in REPO_SEARCH_QUERIES:
+            searched_queries.add(q)
+        for q in CODE_SEARCH_QUERIES:
+            searched_queries.add(q)
+
+        discovered_repo_tuples = {item for res in search_results for item in res if isinstance(item, tuple)}
+        discovered_code_urls = {item for res in search_results for item in res if isinstance(item, str)}
+        logger.info(f"Discovered {len(discovered_repo_tuples)} repos, {len(discovered_code_urls)} code URLs.")
+
+        # اگر Core تمام شده، مستقیماً به Stage 3 برو
+        if CORE_LIMIT_REACHED:
+            logger.warning("Core limit reached before scanning. Skipping Stage 2.")
+            source_urls = set(discovered_code_urls)
+        else:
+            # --- Stage 2: Scan repos with hourly filter ---
+            logger.info("--- Stage 2: Scanning Repos (Hourly Filter Active) ---")
+            source_urls = set(discovered_code_urls)
+            semaphores = {'fetch': fetch_semaphore, 'search': search_semaphore}
+
+            manual_to_scan = [(o, r) for o, r in MANUAL_REPOS_TO_SCAN if f"{o}/{r}" not in scanned_manual_repos]
+            if manual_to_scan and not CORE_LIMIT_REACHED:
+                manual_tasks = [asyncio.create_task(check_and_scan_repo(session, o, r, headers, semaphores, source_urls)) for o, r in manual_to_scan]
+                for fut in tqdm(asyncio.as_completed(manual_tasks), total=len(manual_tasks), desc="[Stage 2] Manual Repos"):
+                    try:
+                        await fut
+                    except Exception as e:
+                        logger.warning(f"Manual repo error: {e}")
+                    if CORE_LIMIT_REACHED:
+                        logger.warning("Core limit reached during manual scan.")
+                        break
+                for o, r in manual_to_scan:
+                    scanned_manual_repos.add(f"{o}/{r}")
+
+            discovered_only = discovered_repo_tuples - set(MANUAL_REPOS_TO_SCAN)
+            repos_to_scan = list(discovered_only)[:final_max_scan]
+            if repos_to_scan and not CORE_LIMIT_REACHED:
+                logger.info(f"Scanning {len(repos_to_scan)} discovered repos")
+                repo_tasks = [asyncio.create_task(check_and_scan_repo(session, o, r, headers, semaphores, source_urls)) for o, r in repos_to_scan]
+                for fut in tqdm(asyncio.as_completed(repo_tasks), total=len(repo_tasks), desc="[Stage 2] Discovered Repos"):
+                    try:
+                        await fut
+                    except Exception as e:
+                        logger.warning(f"Discovered repo error: {e}")
+                    if CORE_LIMIT_REACHED:
+                        logger.warning("Core limit reached during discovered scan.")
+                        break
+
+            await save_checkpoint(processed_urls_session, searched_queries, scanned_manual_repos)
+
+        logger.info(f"Total source URLs (before filtering): {len(source_urls)}")
+
+        # --- Stage 3: Process URLs ---
+        logger.info("--- Stage 3: Processing URLs ---")
+        urls_to_process = []
+        for u in source_urls:
+            if 'github.com' not in u and 'raw.githubusercontent.com' not in u:
+                continue
+            if u in processed_urls_session:
+                continue
+            if cache.is_cached(u) or await db_is_url_processed(u, CONFIG_DEFAULTS["CACHE_EXPIRY_DAYS"]):
+                continue
+            urls_to_process.append(u)
+
+        logger.info(f"New URLs to process: {len(urls_to_process)}")
+        batch_size = CONFIG_DEFAULTS["BATCH_SIZE"]
+        for i in range(0, len(urls_to_process), batch_size):
+            batch = urls_to_process[i:i+batch_size]
+            tasks = [asyncio.create_task(process_url(session, url, headers, processed_urls_session, cache, fetch_semaphore, 0))
+                     for url in batch]
+            for fut in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc=f"[Stage 3] Batch {i//batch_size + 1}"):
+                try:
+                    await fut
+                except Exception as e:
+                    logger.debug(f"Process error: {e}")
+            await save_checkpoint(processed_urls_session, searched_queries, scanned_manual_repos)
+
+    # --- Stage 4: Final Export ---
+    logger.info("--- Stage 4: Final Export ---")
+    cache._save_cache()
+    all_configs = await db_get_all_configs()
+    unique_configs = {c.strip() for c in all_configs if c.strip()}
+    logger.info(f"✅ Total unique configs: {len(unique_configs)}")
+    if unique_configs:
+        with open(CONFIG_DEFAULTS["OUTPUT_FILE"], "w", encoding="utf-8") as f:
+            for c in sorted(unique_configs):
+                f.write(c + "\n")
+        logger.info(f"Saved to '{CONFIG_DEFAULTS['OUTPUT_FILE']}'")
+    else:
+        logger.warning("⚠️ No configs found.")
+
+    if CORE_LIMIT_REACHED:
+        logger.warning("⛔ Script finished early because Core limit was reached.")
+    else:
+        logger.info("✅ Script completed normally without hitting Core limit.")
+
+    if os.path.exists(CONFIG_DEFAULTS["CHECKPOINT_FILE"]):
+        os.remove(CONFIG_DEFAULTS["CHECKPOINT_FILE"])
+
+    logger.info(f"--- Finished in {int(time.time() - start_time)}s ---")
+    logger.info(f"Estimated Core used: {TOTAL_CORE_USED}")
+
+if __name__ == "__main__":
+    if os.name == 'nt':
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        except Exception:
+            pass
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Interrupted. Progress saved in checkpoint.")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}", exc_info=True)
