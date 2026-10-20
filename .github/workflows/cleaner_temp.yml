@@ -1,36 +1,35 @@
-name: Temp Channel Cleaner (commit results)
+name: Temp Channel Cleaner
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:      # اجرای دستی برای اعتبارسنجی کانال‌ها
 
 jobs:
-  clean:
+  clean-channels:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
-      contents: write          # اجازهٔ commit و push
+      contents: write
 
     steps:
-      - name: Checkout
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install requests
+      - name: 📦 Install Requests
         run: pip install requests
 
-      - name: Run cleaner
+      - name: 🔍 Run Channel Cleaner & Validator
         run: python src/channel_cleaner.py
 
-      # ثبت فایل‌های جدید در مخزن
-      - name: Commit cleaned files
+      - name: 💾 Commit Cleaned Channel Lists
         run: |
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
-          git add data/channels_cleaned.txt data/invalid_channels.txt
-          git commit -m "Add cleaned and invalid channel lists" || echo "No changes to commit"
+          git config user.name "Goodbaye Cleaner Bot"
+          git config user.email "bot@goodbaye.internal"
+          git add data/channels_cleaned.txt data/invalid_channels.txt 2>/dev/null || true
+          git commit -m "🧹 Update Cleaned and Invalid Telegram Channels" || echo "No changes to commit"
           git pull --rebase --strategy-option ours
           git push
