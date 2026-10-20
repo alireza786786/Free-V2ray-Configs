@@ -1,0 +1,40 @@
+# ==============================================================================
+# Goodbaye Universal Standard - Git Ignore Policy
+# Repository: alireza786786/Free-V2ray-Configs
+# ==============================================================================
+
+# Secrets and Environment Variables
+.env
+*.env
+.env.*
+
+# SQLite Database and Wal files
+collector.db
+collector.db-journal
+collector.db-wal
+collector.db-shm
+*.db
+*.sqlite3
+
+# Logs and Run Reports
+*.log
+collector.log
+
+# Caches and Temp Progress
+collector_cache.json
+*.cache
+
+# Python Bytecode and Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Operating System and IDE Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
