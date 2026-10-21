@@ -1,0 +1,1 @@
+vless://7db834ec-1847-4f0c-9e24-d7f12fd43187@5.181.2.3:443?allowinsecure=1&fp=random&host=k1.allservers.org&path=%2F11790%2Fstaticvpn&security=tls&sni=k1.allservers.org&type=ws

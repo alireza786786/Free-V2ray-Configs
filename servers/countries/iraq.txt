@@ -1,1 +1,2 @@
-socks://185.95.186.165:48293
+vless://ff6d2dda-7b90-404e-9951-34b3124bfdfa@193.56.135.137:9543?encryption=none&flow=xtls-rprx-vision&fp=safari&headertype=none&pbk=M6Ck7wUfOLhQl4582CBnaXwscPEP6SCpdEkUDzoj4Fc&security=reality&sid=123abcde&sni=storage.yandexcloud.net&type=tcp
+vless://ff6d2dda-7b90-404e-9951-34b3124bfdfa@193.56.135.137:9543?encryption=none&flow=xtls-rprx-vision&fp=chrome&headertype=none&pbk=M6Ck7wUfOLhQl4582CBnaXwscPEP6SCpdEkUDzoj4Fc&security=reality&sid=123abcde&sni=storage.yandexcloud.net&type=tcp

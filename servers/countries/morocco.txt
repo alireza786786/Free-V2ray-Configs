@@ -1,0 +1,1 @@
+vless://17cdeaa0-d9f0-443d-8f14-80cef1de5529@ma-1.vpnd.io:12574?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=_rRqFVyD5EgBQt9YWutbSjidLJEjoLcxBejrytypBDU&security=reality&sid=7fa5d084&sni=amazon.com&spx=%2F&type=tcp

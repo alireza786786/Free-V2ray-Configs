@@ -1,6 +1,6 @@
-trojan://Txoodd2HQP-Og7Y7MdVTbg@45.95.241.173:443?allowinsecure=1&security=tls&sni=marzban01.barfak8184.space&type=tcp
-trojan://VKJJ473kC8@45.95.241.56:2053?alpn=http%2F1.1&mode=gun&security=tls&servicename=Telegram-id-DarkVPNpro&sni=post-truth.arshaproplus.cf&type=grpc
+vless://df5b0634-2db4-4094-afe5-9b61446a29c4@45.95.241.156:80?encryption=none&fp=ios&host=zeus-panel-f6vc9k.hajmeti40-842e.workers.dev&path=%2FIn_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh&security=&sni=zeus-panel-f6vc9k.hajmeti40-842e.workers.dev&type=ws
 trojan://6a5NNbGpkK@45.95.241.113:2053?alpn=http%2F1.1&mode=gun&security=tls&servicename=Telegram-id-DarkVPNpro&sni=nopa.arshaproplus.cf&type=grpc
+trojan://VKJJ473kC8@45.95.241.56:2053?alpn=http%2F1.1&mode=gun&security=tls&servicename=Telegram-id-DarkVPNpro&sni=post-truth.arshaproplus.cf&type=grpc
 vless://56d21127-bc8b-44cc-9592-240656f22dd9@45.95.241.156:443/?alpn=h3%2Ch2&encryption=none&flow=&fp=chrome&host=xxx.66500-280b-471c-b2b8-d68b7f9960010.workers.dev&path=%2F%3Fed%3D2048&security=tls&sni=xxx.66500-280b-471c-b2b8-d68b7f9960010.workers.dev&type=ws
 vless://34839650-7a33-4c10-a0a6-f0777fc7c97e@45.95.241.25:443?encryption=none&host=777.olemam.shop&path=%2F%40melov2ray&security=tls&sni=777.olemam.shop&type=ws
-vless://df5b0634-2db4-4094-afe5-9b61446a29c4@45.95.241.156:80?encryption=none&fp=ios&host=zeus-panel-f6vc9k.hajmeti40-842e.workers.dev&path=%2FIn_Panel_Rayeghan_Ast_Va_Gheyre_Ghabele_Foroosh&security=&sni=zeus-panel-f6vc9k.hajmeti40-842e.workers.dev&type=ws
+trojan://Txoodd2HQP-Og7Y7MdVTbg@45.95.241.173:443?allowinsecure=1&security=tls&sni=marzban01.barfak8184.space&type=tcp
