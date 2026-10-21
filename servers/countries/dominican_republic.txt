@@ -1,4 +1,4 @@
 socks://154.88.189.19:5678
-socks://154.88.189.18:5678
 socks://154.88.189.20:5678
+socks://154.88.189.18:5678
 vless://2eadb97f-bba4-4471-8d55-bd461525a2dc@181.36.229.212:443?fp=chrome&headertype=none&host=eded-52n.pages.dev&path=%2F&security=tls&sni=eded-52n.pages.dev&type=ws

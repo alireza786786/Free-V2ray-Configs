@@ -1,6 +1,6 @@
-vless://2eadb97f-bba4-4471-8d55-bd461525a2dc@188.240.213.98:8443?fp=chrome&headertype=none&host=eded-52n.pages.dev&path=%2F&security=tls&sni=eded-52n.pages.dev&type=ws
-vless://495c7195-85b8-498a-bf20-2ea9ce9175b5@188.240.213.98:8443?encryption=none&fp=chrome&host=snip.edgeoneai.cc.cd&path=%2F&security=tls&sni=snip.edgeoneai.cc.cd&type=ws
 vless://495c7195-85b8-498a-bf20-2ea9ce9175b5@188.240.213.98:2053?fp=chrome&headertype=none&host=snip.edgeoneai.cc.cd&path=%2F&security=tls&sni=snip.edgeoneai.cc.cd&type=ws
-vless://495c7195-85b8-498a-bf20-2ea9ce9175b5@188.240.213.98:2053?fp=firefox&headertype=none&host=snip.edgeoneai.cc.cd&path=%2F&security=tls&sni=snip.edgeoneai.cc.cd&type=ws
 vless://495c7195-85b8-498a-bf20-2ea9ce9175b5@188.240.213.98:2053?fp=safari&headertype=none&host=snip.edgeoneai.cc.cd&path=%2F&security=tls&sni=snip.edgeoneai.cc.cd&type=ws
+vless://495c7195-85b8-498a-bf20-2ea9ce9175b5@188.240.213.98:2053?fp=firefox&headertype=none&host=snip.edgeoneai.cc.cd&path=%2F&security=tls&sni=snip.edgeoneai.cc.cd&type=ws
+vless://2eadb97f-bba4-4471-8d55-bd461525a2dc@188.240.213.98:8443?fp=chrome&headertype=none&host=eded-52n.pages.dev&path=%2F&security=tls&sni=eded-52n.pages.dev&type=ws
 vless://495c7195-85b8-498a-bf20-2ea9ce9175b5@188.240.213.98:2053?fp=ios&headertype=none&host=snip.edgeoneai.cc.cd&path=%2F&security=tls&sni=snip.edgeoneai.cc.cd&type=ws
+vless://495c7195-85b8-498a-bf20-2ea9ce9175b5@188.240.213.98:8443?encryption=none&fp=chrome&host=snip.edgeoneai.cc.cd&path=%2F&security=tls&sni=snip.edgeoneai.cc.cd&type=ws
