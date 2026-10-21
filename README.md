@@ -51,7 +51,7 @@
 این پروژه با بهره‌گیری هم‌زمان از <strong>مخازن گیت‌هاب</strong> و <strong>کانال‌های عمومی تلگرام</strong> (بدون نیاز به API، ربات یا شماره تلفن)، قدرتمندترین و تازه‌ترین منبع کانفیگ‌های زنده را فراهم می‌کند. تمام فرآیندها به‌صورت <strong>کاملاً خودکار</strong> بر روی خط لوله ایمن GitHub Actions با <strong>شاخص کیفیت سخت‌گیرانه (پینگ واقعی زیر ۵۰۰ میلی‌ثانیه)</strong> اجرا می‌شوند.
 </p>
 
-<img src="line.gif" alt="separator" style="display: block; margin: 30px auto;" />
+<img src="https://github.com/user-attachments/assets/10f7cba4-523a-4dd2-a6b3-e7eaba3e8ecf" alt="separator" style="display: block; margin: 30px auto;" />
 
 ## ✨ قابلیت‌ها و ویژگی‌های متمایز
 
