@@ -1,0 +1,30 @@
+# Secrets
+.env
+*.env
+.env.*
+
+# Local database and logs
+collector.db
+collector.db-journal
+collector.db-wal
+collector.db-shm
+*.log
+collector.log
+
+# Pipeline state - regenerated on every run, must never be committed
+data/geoip_cache.json
+data/tested_servers.json
+collector_cache.json
+*.cache
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
