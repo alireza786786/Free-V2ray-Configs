@@ -5,6 +5,8 @@
 # Repository: https://github.com/alireza786786/Free-V2ray-Configs
 # ==============================================================================
 
+from __future__ import annotations
+
 import os
 import sys
 import json
@@ -13,10 +15,11 @@ import socket
 import asyncio
 import base64
 import logging
+from typing import Optional, Tuple, Dict, List, Any
 from urllib.parse import urlsplit, parse_qsl, unquote
 from pathlib import Path
 import aiohttp
-from tqdm.asyncio import tqdm
+from tqdm import tqdm
 
 # Logging configuration
 logging.basicConfig(
