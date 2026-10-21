@@ -45,7 +45,7 @@
 This project leverages <strong>GitHub repositories</strong> and <strong>public Telegram channels</strong> simultaneously (without requiring any Telegram API token, bot session, or phone number) to provide the most powerful source of live, tested configs. All pipelines run <strong>fully automatically</strong> on GitHub Actions under a <strong>strict quality standard (real latency under 500ms)</strong>.
 </p>
 
-<img src="line.gif" alt="separator" style="display: block; margin: 30px auto;" />
+<img src="https://github.com/user-attachments/assets/10f7cba4-523a-4dd2-a6b3-e7eaba3e8ecf" alt="separator" style="display: block; margin: 30px auto;" />
 
 ## ✨ Distinctive Features
 
