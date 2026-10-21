@@ -12,6 +12,8 @@ import logging
 from pathlib import Path
 from datetime import datetime, timezone
 
+from remarker import apply_remark
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -72,6 +74,9 @@ def main():
         cc = item.get("country_code", "GL").upper()
         country_name = item.get("country", "Global")
         ping = item.get("ping", 500)
+
+        # الگوی ثابت روی همه‌ی خروجی‌ها (به‌جای لینک خام)
+        raw_uri = apply_remark(item) or raw_uri
 
         # 1. Protocol Grouping
         proto_groups.setdefault(scheme, []).append(raw_uri)
