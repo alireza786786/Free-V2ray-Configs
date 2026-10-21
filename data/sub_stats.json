@@ -1,29 +1,29 @@
 {
-  "updated_at": "2026-10-21T11:34:54.323872+00:00",
-  "total_active": 147624,
+  "updated_at": "2026-10-21T19:55:37.835139+00:00",
+  "total_active": 43474,
   "lite_count": 70,
-  "no_cf_count": 102076,
-  "emergency_count": 2610,
-  "iran_fast_count": 147201,
+  "no_cf_count": 26310,
+  "emergency_count": 43,
+  "iran_fast_count": 43370,
   "protocols": {
-    "ss": 7974,
-    "vless": 92948,
-    "trojan": 34059,
-    "vmess": 9707,
-    "socks": 2610,
-    "hysteria2": 325,
-    "tuic": 1
+    "vmess": 6122,
+    "vless": 25417,
+    "trojan": 5996,
+    "ss": 5755,
+    "hysteria2": 119,
+    "tuic": 22,
+    "socks": 43
   },
   "top_countries": {
-    "global": 85645,
-    "united_states": 11945,
-    "canada": 23561,
-    "south_africa": 68,
-    "belize": 241,
-    "lithuania": 192,
-    "british_virgin_islands": 44,
-    "united_kingdom": 1550,
-    "germany": 3991,
-    "india": 252
+    "united_states": 5668,
+    "canada": 13732,
+    "sweden": 542,
+    "global": 8404,
+    "spain": 134,
+    "russia": 1711,
+    "singapore": 527,
+    "hong_kong": 821,
+    "cyprus": 186,
+    "curacao": 124
   }
 }
