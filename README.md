@@ -5,7 +5,7 @@
 
 <div align="center">
   <!-- بنر رسمی صفحه اصلی -->
-  <img src="<img src="https://github.com/user-attachments/assets/59eb03f3-27ec-495a-af0d-459b1c26a54b" alt="Free-V2ray-Configs Banner" style="width: 100%; max-width: 950px; border-radius: 14px; margin-bottom: 20px;">" alt="Free-V2ray-Configs Banner" style="width: 100%; max-width: 950px; border-radius: 14px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+  <img src="https://github.com/user-attachments/assets/59eb03f3-27ec-495a-af0d-459b1c26a54b" alt="Free-V2ray-Configs Banner" style="width: 100%; max-width: 950px; border-radius: 14px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
 </div>
 
 <div align="center" style="margin-bottom: 20px;">
