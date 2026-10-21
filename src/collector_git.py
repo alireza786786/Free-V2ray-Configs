@@ -1195,11 +1195,10 @@ async def finalize_output():
     added_configs = new_configs - existing_configs
     logger.info(f"🆕 Truly new configs this run: {len(added_configs)}")
 
-    # بازنویسی یا افزودن فایل جامع
-    all_combined = existing_configs.union(new_configs)
+    # فقط کانفیگ‌های تازه‌ی همین اجرا (رفتار مخزن مرجع)
     with open(output_file, "w", encoding="utf-8") as f:
-        f.write("\n".join(sorted(all_combined)) + "\n")
-    logger.info(f"💾 Saved total {len(all_combined)} configs to '{output_file}'")
+        f.write("\n".join(sorted(added_configs)) + "\n")
+    logger.info(f"💾 Saved {len(added_configs)} new configs to '{output_file}'")
 
 if __name__ == "__main__":
     if os.name == 'nt':
