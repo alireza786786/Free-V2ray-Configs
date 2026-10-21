@@ -1,0 +1,1 @@
+trojan://MiTiVPN@151.101.223.223:80?ed=2560&eh=Sec-WebSocket-Protocol&host=cdn2-mitivpn.global.ssl.fastly.net&https%3A%2F%2Ft.me%2Fwangcai2=&path=%2F%3Fed%3D2560&security=none&type=ws

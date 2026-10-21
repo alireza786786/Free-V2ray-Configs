@@ -1,0 +1,28 @@
+{
+  "updated_at": "2026-10-21T11:08:33.457740+00:00",
+  "total_active": 117682,
+  "lite_count": 70,
+  "no_cf_count": 80210,
+  "emergency_count": 3547,
+  "iran_fast_count": 117533,
+  "protocols": {
+    "vmess": 9015,
+    "vless": 66071,
+    "trojan": 31559,
+    "ss": 7233,
+    "socks": 3547,
+    "hysteria2": 257
+  },
+  "top_countries": {
+    "cyprus": 125,
+    "global": 72755,
+    "canada": 18092,
+    "united_states": 7719,
+    "seychelles": 485,
+    "philippines": 31,
+    "estonia": 108,
+    "united_kingdom": 1160,
+    "costa_rica": 189,
+    "belize": 191
+  }
+}

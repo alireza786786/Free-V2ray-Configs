@@ -1,0 +1,27 @@
+GitHub Repo Report — last update: 2026-10-21T10:37:44.629586+00:00
+
+(A-K-6, v2ray_scrapper_repo): 0, 841
+(Argh73, VpnConfigCollector): 663666
+(DarkRoyalty, shnajder-vpn-configs): 0, 82197
+(ENTERPILOT, GoModel): 0, 5
+(Epodonios, v2ray-configs): 0, 142491
+(MFSGA, Chimera): 0, 1
+(Rusl2023, vpn-alive-check): 0, 838
+(SoliSpirit, v2ray-configs): 0, 43399
+(Thuongquanggg, Proxy): 0, 1420
+(YawStar, Proxy-Hunter): 0, 756
+(amirkma, proxykma): 0, 300
+(dpangestuw, Free-Proxy): 0, 14022
+(iboxz, free-v2ray-collector): 0, 662
+(igareck, vpn-configs-for-russia): 0, 1586
+(iplocate, free-proxy-list): 0, 1930
+(khbmgh, clasher): 0, 910
+(kravchenkosaveliy27-crypto, my-vpn): 0, 185
+(libnyanpasu, clash-nyanpasu): 0, 3
+(mmalmi, nostr-vpn): 0, 1
+(mmpx12, proxy-list): 0, 942
+(qopq1366, VlessConfig): 0, 952
+(stormsia, proxy-list): 0, 535
+(svpjohji, NECHAEV_VPN_AGGREGATOR): 0, 399
+(vmheaven, VMHeaven.io-Free-Proxy-List): 0, 3029
+(wxglenovo, 1AdGuardHome-Rules-AutoMerge-): 0, 11
