@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# Goodbaye Universal Standard - Protocol Rebuilder with 5-Line Remark Formatter
-# Exact reference structure with Goodbaye mandatory naming standard
+# Goodbaye Universal Standard - Protocol & Country Rebuilder
+# Features: Strict Endpoint Deduplication (Zero Duplicates) + Auto Country Shards
 # Repository: https://github.com/alireza786786/Free-V2ray-Configs
 # ==============================================================================
 
@@ -18,23 +18,35 @@ logger = logging.getLogger("rebuild_protocols")
 
 ALL_SERVERS = "all_servers.txt"
 SERVERS_DIR = "servers"
+COUNTRIES_DIR = "servers/countries"
 
-# Protocol normalization map (identical to reference repo)
 PROTO_MAP = {
     "hy2": "hysteria2",
     "VLESS": "vless",
     "shadowsocks": "ss",
-    "socks": "socks5"
+    "socks": "socks5",
+    "socks4": "socks5"
 }
 
-# Country flag & name mapping (ISO to Unicode Emoji)
 FA_COUNTRY_MAP = {
-    "DE": ("🇩🇪", "آلمان"), "NL": ("🇳🇱", "هلند"), "US": ("🇺🇸", "آمریکا"),
-    "GB": ("🇬🇧", "انگلیس"), "FR": ("🇫🇷", "فرانسه"), "TR": ("🇹🇷", "ترکیه"),
-    "FI": ("🇫🇮", "فنلاند"), "SE": ("🇸🇪", "سوئد"), "CA": ("🇨🇦", "کانادا"),
-    "SG": ("🇸🇬", "سنگاپور"), "JP": ("🇯🇵", "ژاپن"), "AE": ("🇦🇪", "امارات"),
-    "RU": ("🇷🇺", "روسیه"), "IR": ("🇮🇷", "ایران"), "IT": ("🇮🇹", "ایتالیا"),
-    "PL": ("🇵🇱", "لهستان"), "CH": ("🇨🇭", "سوئیس"), "AT": ("🇦🇹", "اتریش")
+    "DE": ("🇩🇪", "آلمان", "germany"),
+    "NL": ("🇳🇱", "هلند", "netherlands"),
+    "US": ("🇺🇸", "آمریکا", "united_states"),
+    "GB": ("🇬🇧", "انگلیس", "united_kingdom"),
+    "FR": ("🇫🇷", "فرانسه", "france"),
+    "TR": ("🇹🇷", "ترکیه", "turkey"),
+    "FI": ("🇫🇮", "فنلاند", "finland"),
+    "SE": ("🇸🇪", "سوئد", "sweden"),
+    "CA": ("🇨🇦", "کانادا", "canada"),
+    "SG": ("🇸🇬", "سنگاپور", "singapore"),
+    "JP": ("🇯🇵", "ژاپن", "japan"),
+    "AE": ("🇦🇪", "امارات", "united_arab_emirates"),
+    "RU": ("🇷🇺", "روسیه", "russia"),
+    "IR": ("🇮🇷", "ایران", "iran"),
+    "IT": ("🇮🇹", "ایتالیا", "italy"),
+    "PL": ("🇵🇱", "لهستان", "poland"),
+    "CH": ("🇨🇭", "سوئیس", "switzerland"),
+    "AT": ("🇦🇹", "اتریش", "austria")
 }
 
 def safe_b64_decode(text: str) -> str:
@@ -48,114 +60,102 @@ def safe_b64_decode(text: str) -> str:
 def b64_encode_nopad(data: bytes) -> str:
     return base64.b64encode(data).decode("utf-8").rstrip("=")
 
-def detect_host_and_capability(uri: str, scheme: str) -> tuple[str, str, str]:
-    """Extracts host, capability, and clean uri without remark."""
-    uri_clean = uri.split("#", 1)[0].strip()
-    capability = "VIP Strict"
+def extract_endpoint_signature(uri: str, scheme: str) -> tuple[str, str, int, str]:
+    """
+    Extracts a strict technical signature: (scheme, host, port, user_id)
+    This guarantees ZERO duplicates regardless of query order, tags, or formatting.
+    """
+    clean_uri = uri.split("#", 1)[0].strip()
     host = ""
+    port = 0
+    identifier = ""
 
-    # Detect real capability from parameters
-    u_lower = uri_clean.lower()
-    if "security=reality" in u_lower or "pbk=" in u_lower:
-        capability = "Reality Bypass"
-    elif "type=grpc" in u_lower:
-        capability = "gRPC TLS"
-    elif scheme in ("hysteria", "hysteria2", "hy2"):
-        capability = "UDP Fast-Path"
-    elif scheme in ("tuic", "juicity"):
-        capability = "QUIC Ultra"
-    elif "security=tls" in u_lower:
-        capability = "TLS High-Speed"
-    elif "type=ws" in u_lower or "net=ws" in u_lower:
-        capability = "WebSocket CDN"
-    elif scheme in ("socks", "socks5", "socks4"):
-        capability = "Emergency SOCKS5"
-
-    # Extract host
     if scheme == "vmess":
-        payload = uri_clean.split("://", 1)[-1].split("?", 1)[0]
+        payload = clean_uri.split("://", 1)[-1].split("?", 1)[0]
         decoded = safe_b64_decode(payload)
         if decoded:
             try:
                 data = json.loads(decoded)
-                host = str(data.get("add", "")).strip()
+                host = str(data.get("add", "")).lower().strip()
+                port = int(data.get("port", 0))
+                identifier = str(data.get("id", "")).lower().strip()
             except Exception:
                 pass
-    elif "@" in uri_clean:
-        try:
-            part = uri_clean.rsplit("@", 1)[-1].split("?", 1)[0]
-            host = part.split(":", 1)[0].strip("[]")
-        except Exception:
-            pass
+    elif scheme == "ss":
+        part = clean_uri.split("://", 1)[-1].split("?", 1)[0]
+        if "@" in part:
+            cred, host_port = part.rsplit("@", 1)
+            identifier = cred
+            if ":" in host_port:
+                h, p = host_port.rsplit(":", 1)
+                host = h.strip("[]").lower()
+                port = int(p) if p.isdigit() else 0
     else:
         try:
-            parsed = urlsplit(uri_clean)
-            host = parsed.hostname or ""
+            parsed = urlsplit(clean_uri)
+            host = (parsed.hostname or "").lower()
+            port = parsed.port or 0
+            identifier = (parsed.username or "").lower()
         except Exception:
             pass
 
-    return uri_clean, host, capability
+    return clean_uri, host, port, identifier
 
-def guess_location_and_dc(host: str) -> tuple[str, str, str]:
-    """Guesses country and datacenter from host/domain indicators."""
+def detect_capability(uri_clean: str, scheme: str) -> str:
+    u = uri_clean.lower()
+    if "security=reality" in u or "pbk=" in u:
+        return "Reality Bypass"
+    if "type=grpc" in u:
+        return "gRPC TLS"
+    if scheme in ("hysteria", "hysteria2", "hy2"):
+        return "UDP Fast-Path"
+    if scheme in ("tuic", "juicity"):
+        return "QUIC Ultra"
+    if "security=tls" in u:
+        return "TLS High-Speed"
+    if "type=ws" in u or "net=ws" in u:
+        return "WebSocket CDN"
+    if scheme in ("socks", "socks5", "socks4"):
+        return "Emergency SOCKS5"
+    return "VIP Strict"
+
+def guess_location(host: str) -> tuple[str, str, str, str]:
+    """Returns: (flag, country_fa, datacenter, country_slug)"""
     h = host.lower()
-    flag, country_fa = "🌐", "اینترنت آزاد"
+    flag, country_fa, country_slug = "🌐", "اینترنت آزاد", "global"
     dc = "Cloud Server"
 
-    # Known TLD and subdomains
-    if ".de" in h or "fra" in h or "germany" in h:
-        flag, country_fa = FA_COUNTRY_MAP["DE"]
-    elif ".nl" in h or "ams" in h or "netherlands" in h:
-        flag, country_fa = FA_COUNTRY_MAP["NL"]
-    elif ".us" in h or "usa" in h or "ord" in h or "lax" in h:
-        flag, country_fa = FA_COUNTRY_MAP["US"]
-    elif ".fr" in h or "paris" in h:
-        flag, country_fa = FA_COUNTRY_MAP["FR"]
-    elif ".tr" in h or "turkey" in h or "ist" in h:
-        flag, country_fa = FA_COUNTRY_MAP["TR"]
-    elif ".fi" in h or "hel" in h or "finland" in h:
-        flag, country_fa = FA_COUNTRY_MAP["FI"]
-    elif ".uk" in h or ".gb" in h or "lon" in h:
-        flag, country_fa = FA_COUNTRY_MAP["GB"]
+    for code, (f, c_fa, slug) in FA_COUNTRY_MAP.items():
+        if f".{code.lower()}" in h or slug in h:
+            flag, country_fa, country_slug = f, c_fa, slug
+            break
 
-    # Datacenter detection
     if "cloudflare" in h or "pages.dev" in h or "workers.dev" in h:
         dc = "Cloudflare CDN"
-    elif "hetzner" in h or "your-server" in h:
+    elif "hetzner" in h:
         dc = "Hetzner Online"
     elif "ovh" in h:
         dc = "OVHcloud"
     elif "digitalocean" in h:
         dc = "DigitalOcean"
-    elif "amazon" in h or "aws" in h or "cloudfront" in h:
+    elif "amazon" in h or "aws" in h:
         dc = "AWS Cloud"
     elif host:
-        clean_name = host.split(".")[0] if "." in host else host
-        dc = f"{clean_name.capitalize()} DC"
+        clean = host.split(".")[0] if "." in host else host
+        dc = f"{clean.capitalize()} DC"
 
-    return flag, country_fa, dc
+    return flag, country_fa, dc, country_slug
 
-def build_5line_remark(flag: str, country_fa: str, dc: str, scheme: str, capability: str) -> str:
-    """
-    Constructs the Goodbaye 5-Line Universal Standard Remark:
-    👉🆔@Goodbaye_filtering
-    📡[پرچم] [کشور]
-    ®️[دیتاسنتر/شهر]
-    🅿️ping:120ms
-    ⚡[قابلیت] | [پروتکل و آی‌پی]
-    """
+def apply_goodbaye_remark(uri_clean: str, scheme: str, host: str) -> str:
+    flag, country_fa, dc, country_slug = guess_location(host)
+    capability = detect_capability(uri_clean, scheme)
+
     line1 = "👉🆔@Goodbaye_filtering"
     line2 = f"📡{flag} {country_fa}"
     line3 = f"®️{dc}"
     line4 = "🅿️ping:128ms"
     line5 = f"⚡{capability} | {scheme.upper()} IPv4"
-    return f"{line1}\n{line2}\n{line3}\n{line4}\n{line5}"
-
-def apply_goodbaye_remark(uri: str, scheme: str) -> str:
-    """Applies the 5-line remark cleanly (VMess JSON ps or URL-encoded fragment)."""
-    uri_clean, host, capability = detect_host_and_capability(uri, scheme)
-    flag, country_fa, dc = guess_location_and_dc(host)
-    remark_text = build_5line_remark(flag, country_fa, dc, scheme, capability)
+    remark_text = f"{line1}\n{line2}\n{line3}\n{line4}\n{line5}"
 
     if scheme == "vmess":
         payload = uri_clean.split("://", 1)[-1]
@@ -165,13 +165,13 @@ def apply_goodbaye_remark(uri: str, scheme: str) -> str:
                 data = json.loads(decoded)
                 data["ps"] = remark_text
                 new_payload = b64_encode_nopad(json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-                return f"vmess://{new_payload}"
+                return f"vmess://{new_payload}", country_slug
             except Exception:
                 pass
-        return uri_clean
+        return uri_clean, country_slug
     else:
         encoded_remark = quote(remark_text, safe="")
-        return f"{uri_clean}#{encoded_remark}"
+        return f"{uri_clean}#{encoded_remark}", country_slug
 
 def main():
     if not os.path.exists(ALL_SERVERS):
@@ -179,42 +179,72 @@ def main():
         return
 
     with open(ALL_SERVERS, "r", encoding="utf-8", errors="ignore") as f:
-        raw_configs = sorted({line.strip() for line in f if line.strip() and not line.startswith("#")})
+        raw_lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+
+    logger.info(f"Read {len(raw_lines)} candidate configs. Starting strict deduplication...")
 
     os.makedirs(SERVERS_DIR, exist_ok=True)
-    protocols = {}
-    remarked_all_servers = []
+    os.makedirs(COUNTRIES_DIR, exist_ok=True)
 
-    for cfg in raw_configs:
-        if '://' not in cfg:
+    # Clean existing country files to prevent stale/duplicate country files
+    for old_country_file in Path(COUNTRIES_DIR).glob("*.txt"):
+        try:
+            old_country_file.unlink()
+        except Exception:
+            pass
+
+    seen_endpoints = set()
+    unique_remarked_all = []
+    protocol_groups = {}
+    country_groups = {}
+
+    for cfg in raw_lines:
+        if "://" not in cfg:
             continue
 
-        original_proto = cfg.split('://')[0].strip().lower()
-        proto = PROTO_MAP.get(original_proto, original_proto)
+        raw_scheme = cfg.split("://", 1)[0].strip().lower()
+        proto = PROTO_MAP.get(raw_scheme, raw_scheme)
 
-        # Normalize scheme in URI
-        if original_proto != proto:
-            cfg = cfg.replace(f"{original_proto}://", f"{proto}://", 1)
+        clean_uri, host, port, identifier = extract_endpoint_signature(cfg, proto)
+        if not host:
+            continue
+
+        # Strict Unique Endpoint Signature (Eliminates ALL duplicates)
+        sig = (proto, host, port, identifier)
+        if sig in seen_endpoints:
+            continue
+        seen_endpoints.add(sig)
+
+        # Normalize URI scheme
+        if raw_scheme != proto:
+            clean_uri = clean_uri.replace(f"{raw_scheme}://", f"{proto}://", 1)
 
         # Apply Goodbaye 5-Line Remark
-        remarked_cfg = apply_goodbaye_remark(cfg, proto)
+        remarked_cfg, country_slug = apply_goodbaye_remark(clean_uri, proto, host)
 
-        protocols.setdefault(proto, []).append(remarked_cfg)
-        remarked_all_servers.append(remarked_cfg)
+        unique_remarked_all.append(remarked_cfg)
+        protocol_groups.setdefault(proto, []).append(remarked_cfg)
+        country_groups.setdefault(country_slug, []).append(remarked_cfg)
 
-    # 1. Update all_servers.txt with remarked configs
+    # 1. Update all_servers.txt (Strictly Unique)
     with open(ALL_SERVERS, "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(remarked_all_servers) + "\n")
-    logger.info(f"Updated {ALL_SERVERS} with {len(remarked_all_servers)} remarked configs.")
+        f.write("\n".join(unique_remarked_all) + "\n")
+    logger.info(f"✅ all_servers.txt updated: {len(unique_remarked_all)} completely UNIQUE configs (0 duplicates).")
 
-    # 2. Write exact reference protocol files into servers/
-    for proto, items in protocols.items():
-        fname = f"{SERVERS_DIR}/{proto}_servers.txt"
+    # 2. Write Protocol files
+    for p, items in protocol_groups.items():
+        fname = f"{SERVERS_DIR}/{p}_servers.txt"
         with open(fname, "w", encoding="utf-8", newline="\n") as f:
             f.write("\n".join(items) + "\n")
-        logger.info(f"Rebuilt {fname} with {len(items)} configs")
+        logger.info(f"   ↳ {p}_servers.txt: {len(items)} configs")
 
-    print(f"✅ Protocol rebuild complete. Total: {len(remarked_all_servers)} configs.")
+    # 3. Write Country files in servers/countries/
+    for c_slug, items in country_groups.items():
+        fname = f"{COUNTRIES_DIR}/{c_slug}.txt"
+        with open(fname, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(items) + "\n")
+
+    logger.info(f"✅ Successfully updated {len(country_groups)} country files in '{COUNTRIES_DIR}'.")
 
 if __name__ == "__main__":
     main()
