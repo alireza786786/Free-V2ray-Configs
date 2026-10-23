@@ -3,19 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Goodbaye Filtering — وب‌پنل آنلاین سابسکریپشن V2Ray</title>
+    <title>Goodbaye Filtering — وب‌پنل هوشمند و فوق‌پیشرفته سابسکریپشن V2Ray</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0b0f19;
-            --card-bg: rgba(22, 30, 49, 0.75);
-            --border-color: rgba(255, 255, 255, 0.08);
+            --bg-base: #060913;
+            --bg-card: rgba(15, 23, 42, 0.75);
+            --bg-card-hover: rgba(30, 41, 59, 0.85);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(59, 130, 246, 0.4);
             --primary: #3b82f6;
-            --primary-glow: rgba(59, 130, 246, 0.4);
+            --primary-glow: rgba(59, 130, 246, 0.35);
             --accent: #10b981;
-            --text-main: #f3f4f6;
-            --text-muted: #9ca3af;
+            --accent-glow: rgba(16, 185, 129, 0.35);
+            --vip: #f59e0b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --badge-bg: rgba(59, 130, 246, 0.12);
         }
 
         * {
@@ -27,110 +32,161 @@
         }
 
         body {
-            background: radial-gradient(circle at 50% 0%, #1e293b 0%, var(--bg-color) 75%);
+            background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 35%, var(--bg-base) 80%);
             color: var(--text-main);
             min-height: 100vh;
-            padding: 20px 15px 50px;
+            padding: 25px 15px 60px;
         }
 
         .container {
-            max-width: 900px;
+            max-width: 980px;
             margin: 0 auto;
         }
 
+        /* Header */
         header {
             text-align: center;
-            margin-bottom: 30px;
-            padding-top: 10px;
+            margin-bottom: 25px;
         }
 
-        .badge-brand {
-            display: inline-block;
+        .brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
             background: linear-gradient(135deg, #2563eb, #3b82f6);
             color: white;
-            font-size: 0.8rem;
+            font-size: 0.82rem;
             font-weight: 700;
             padding: 6px 16px;
             border-radius: 9999px;
-            box-shadow: 0 0 20px var(--primary-glow);
-            margin-bottom: 15px;
+            box-shadow: 0 0 25px var(--primary-glow);
+            margin-bottom: 12px;
         }
 
         h1 {
-            font-size: 1.8rem;
+            font-size: 1.9rem;
             font-weight: 900;
-            margin-bottom: 10px;
-            background: linear-gradient(180deg, #ffffff, #94a3b8);
+            margin-bottom: 8px;
+            background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        p.desc {
+        p.subtitle {
             color: var(--text-muted);
             font-size: 0.95rem;
             line-height: 1.6;
         }
 
-        /* Radar & Status Bar */
+        /* Radar & Latency Gauge */
         .radar-bar {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-around;
-            align-items: center;
-            backdrop-filter: blur(12px);
-            margin-bottom: 25px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 16px 20px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            backdrop-filter: blur(14px);
+            margin-bottom: 20px;
             text-align: center;
         }
 
-        .radar-item .val {
+        .radar-box .val {
             font-size: 1.25rem;
-            font-weight: 700;
+            font-weight: 800;
             color: var(--accent);
+            text-shadow: 0 0 12px var(--accent-glow);
         }
 
-        .radar-item .lbl {
+        .radar-box .lbl {
             font-size: 0.75rem;
             color: var(--text-muted);
-            margin-top: 4px;
+            margin-top: 3px;
         }
 
-        /* Operator Tabs */
-        .operator-filters {
+        /* Search & Filter Bar */
+        .search-box {
+            position: relative;
+            margin-bottom: 18px;
+        }
+
+        .search-box input {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 12px 42px 12px 16px;
+            color: white;
+            font-size: 0.9rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .search-box input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px var(--primary-glow);
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 1rem;
+        }
+
+        /* Tabs Nav */
+        .nav-tabs {
             display: flex;
             gap: 8px;
             overflow-x: auto;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+            scrollbar-width: none;
         }
 
-        .op-btn {
-            background: rgba(30, 41, 59, 0.6);
-            border: 1px solid var(--border-color);
+        .nav-tabs::-webkit-scrollbar {
+            display: none;
+        }
+
+        .tab-btn {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid var(--border);
             color: var(--text-muted);
             padding: 8px 16px;
             border-radius: 12px;
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             font-weight: 600;
             cursor: pointer;
             white-space: nowrap;
-            transition: all 0.2s ease;
+            transition: all 0.2s;
         }
 
-        .op-btn.active, .op-btn:hover {
+        .tab-btn.active, .tab-btn:hover {
             background: var(--primary);
             color: white;
             border-color: var(--primary);
-            box-shadow: 0 4px 12px var(--primary-glow);
+            box-shadow: 0 4px 15px var(--primary-glow);
         }
 
-        /* Config Grid */
+        /* Section Titles */
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 800;
+            margin: 25px 0 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #e2e8f0;
+        }
+
+        /* Config Cards Grid */
         .card-grid {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 15px;
+            gap: 14px;
         }
 
         @media (min-width: 640px) {
@@ -140,47 +196,66 @@
         }
 
         .config-card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
             border-radius: 16px;
-            padding: 18px;
+            padding: 16px 18px;
             backdrop-filter: blur(10px);
-            transition: transform 0.2s ease, border-color 0.2s ease;
+            transition: all 0.2s ease;
+            position: relative;
         }
 
         .config-card:hover {
-            transform: translateY(-2px);
-            border-color: rgba(59, 130, 246, 0.4);
+            background: var(--bg-card-hover);
+            transform: translateY(-3px);
+            border-color: var(--border-hover);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
         }
 
-        .card-header {
+        .card-top {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
         }
 
         .card-title {
-            font-size: 1rem;
+            font-size: 0.98rem;
             font-weight: 700;
             display: flex;
             align-items: center;
             gap: 8px;
         }
 
-        .card-tag {
+        .card-badge {
             font-size: 0.7rem;
             padding: 3px 8px;
             border-radius: 6px;
-            background: rgba(59, 130, 246, 0.15);
+            background: var(--badge-bg);
             color: #60a5fa;
-            font-weight: 600;
+            font-weight: 700;
+        }
+
+        .card-badge.vip {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+        }
+
+        .card-badge.emergency {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+        }
+
+        .card-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 14px;
         }
 
         .card-actions {
             display: flex;
             gap: 8px;
-            margin-top: 15px;
         }
 
         .btn {
@@ -189,7 +264,7 @@
             border: none;
             border-radius: 10px;
             font-size: 0.82rem;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -205,6 +280,7 @@
 
         .btn-copy:hover {
             background: #1d4ed8;
+            box-shadow: 0 4px 12px var(--primary-glow);
         }
 
         .btn-qr {
@@ -216,7 +292,64 @@
             background: rgba(255, 255, 255, 0.15);
         }
 
-        /* Modal QR */
+        /* Countries Horizontal Grid */
+        .countries-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        @media (min-width: 640px) {
+            .countries-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        .country-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.2s;
+        }
+
+        .country-card:hover {
+            background: rgba(30, 41, 59, 0.8);
+            border-color: var(--border-hover);
+        }
+
+        .c-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .c-btns {
+            display: flex;
+            gap: 4px;
+        }
+
+        .mini-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            border-radius: 6px;
+            padding: 6px 8px;
+            color: white;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: background 0.2s;
+        }
+
+        .mini-btn:hover {
+            background: var(--primary);
+        }
+
+        /* QR Modal */
         .modal {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -229,21 +362,22 @@
             backdrop-filter: blur(8px);
         }
 
-        .modal-content {
+        .modal-card {
             background: #1e293b;
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--border);
             border-radius: 20px;
-            padding: 25px;
+            padding: 24px;
             text-align: center;
             max-width: 320px;
             width: 100%;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
         }
 
-        .modal-content img {
-            width: 220px;
-            height: 220px;
+        .modal-card img {
+            width: 210px;
+            height: 210px;
             border-radius: 12px;
-            margin: 15px 0;
+            margin: 14px 0;
             background: white;
             padding: 8px;
         }
@@ -256,11 +390,16 @@
             border: none;
             border-radius: 10px;
             cursor: pointer;
-            font-weight: 600;
+            font-weight: 700;
+            transition: background 0.2s;
         }
 
-        /* Telegram Links */
-        .official-links {
+        .btn-close:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Telegram Official Channels */
+        .official-channels {
             margin-top: 35px;
             display: grid;
             grid-template-columns: 1fr;
@@ -268,12 +407,12 @@
         }
 
         @media (min-width: 640px) {
-            .official-links {
+            .official-channels {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
 
-        .link-btn {
+        .tg-link {
             display: flex;
             align-items: center;
             justify-content: center;
@@ -283,23 +422,29 @@
             text-decoration: none;
             font-weight: 700;
             font-size: 0.9rem;
-            transition: all 0.2s;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
 
-        .link-main {
-            background: #0088cc;
+        .tg-link:hover {
+            transform: translateY(-2px);
+        }
+
+        .tg-main {
+            background: linear-gradient(135deg, #0284c7, #0088cc);
             color: white;
+            box-shadow: 0 4px 20px rgba(0, 136, 204, 0.35);
         }
 
-        .link-vip {
-            background: linear-gradient(135deg, #f59e0b, #d97706);
+        .tg-vip {
+            background: linear-gradient(135deg, #d97706, #f59e0b);
             color: white;
+            box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35);
         }
 
-        /* Toast */
+        /* Toast Alert */
         .toast {
             position: fixed;
-            bottom: 20px;
+            bottom: 25px;
             left: 50%;
             transform: translateX(-50%);
             background: #10b981;
@@ -308,7 +453,7 @@
             border-radius: 9999px;
             font-size: 0.85rem;
             font-weight: 700;
-            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+            box-shadow: 0 5px 20px rgba(16, 185, 129, 0.45);
             display: none;
             z-index: 2000;
         }
@@ -318,144 +463,295 @@
 
 <div class="container">
     <header>
-        <div class="badge-brand">🛡️ Goodbaye Universal Standard</div>
-        <h1>وب‌پنل سابسکریپشن آزاد و هوشمند</h1>
-        <p class="desc">کانفیگ‌های تست‌شده با پینگ سخت‌گیرانه (زیر ۵۰۰ میلی‌ثانیه) — آپدیت دائمی</p>
+        <div class="brand-badge">🛡️ Goodbaye Universal Standard</div>
+        <h1>وب‌پنل آنلاین سابسکریپشن V2Ray</h1>
+        <p class="subtitle">کانفیگ‌های زنده با الگوی رسمی ۵ خطی و شاخص سخت‌گیرانه پینگ زیر ۵۰۰ میلی‌ثانیه</p>
     </header>
 
+    <!-- رادار پایش شبکه -->
     <div class="radar-bar">
-        <div class="radar-item">
+        <div class="radar-box">
             <div class="val">Ping &lt; 500ms</div>
             <div class="lbl">شاخص کیفیت اتصال</div>
         </div>
-        <div class="radar-item">
-            <div class="val">🟢 فعال و زنده</div>
+        <div class="radar-box">
+            <div class="val">🟢 فعال و آنلاین</div>
             <div class="lbl">وضعیت سیستم پایش</div>
         </div>
-        <div class="radar-item">
-            <div class="val">100% Free</div>
-            <div class="lbl">دسترسی همگانی</div>
+        <div class="radar-box">
+            <div class="val">100% رایگان</div>
+            <div class="lbl">دسترسی اینترنت آزاد</div>
         </div>
     </div>
 
-    <!-- فیلتر اپراتور -->
-    <div class="operator-filters">
-        <button class="op-btn active" onclick="filterCards('all')">🌐 همه کانفیگ‌ها</button>
-        <button class="op-btn" onclick="filterCards('mci')">📱 همراه اول</button>
-        <button class="op-btn" onclick="filterCards('irancell')">🟡 ایرانسل</button>
-        <button class="op-btn" onclick="filterCards('wifi')">📶 مخابرات و Wi-Fi</button>
-        <button class="op-btn" onclick="filterCards('socks')">⚡ اضطراری SOCKS5</button>
+    <!-- کادر جستجوی آنی -->
+    <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="جستجوی سریع بین پروتکل‌ها، نام کشورها یا پکیج‌ها..." onkeyup="liveSearch()">
     </div>
 
-    <!-- لیست سابسکریپشن‌ها -->
-    <div class="card-grid" id="cardGrid">
-        <!-- کارت جامع -->
-        <div class="config-card" data-op="all mci irancell wifi">
-            <div class="card-header">
-                <div class="card-title">🚀 پکیج اصلی (All VIP)</div>
-                <div class="card-tag">کامل و تست‌شده</div>
+    <!-- تب‌های فیلتر اپراتور -->
+    <div class="nav-tabs" id="opTabs">
+        <button class="tab-btn active" onclick="filterOperator('all')">🌐 همه کانفیگ‌ها</button>
+        <button class="tab-btn" onclick="filterOperator('mci')">📱 همراه اول</button>
+        <button class="tab-btn" onclick="filterOperator('irancell')">🟡 ایرانسل</button>
+        <button class="tab-btn" onclick="filterOperator('wifi')">📶 مخابرات و Wi-Fi</button>
+        <button class="tab-btn" onclick="filterOperator('rightel')">🟣 رایتل</button>
+        <button class="tab-btn" onclick="filterOperator('socks')">🚨 اضطراری SOCKS5</button>
+    </div>
+
+    <!-- پکیج‌های اصلی سابسکریپشن -->
+    <div class="section-title">📦 پکیج‌های جامع و ویژه سابسکریپشن</div>
+    <div class="card-grid" id="mainCards">
+        <!-- کل سرورها -->
+        <div class="config-card" data-tags="all mci irancell wifi rightel کل سرورها اصلی vless vmess trojan">
+            <div class="card-top">
+                <div class="card-title">🚀 پکیج اصلی (All Servers VIP)</div>
+                <div class="card-badge vip">تست‌شده &lt; 500ms</div>
             </div>
-            <p style="font-size: 0.8rem; color: #94a3b8;">شامل تمامی پروتکل‌های سالم با پینگ زیر ۵۰۰ میلی‌ثانیه</p>
+            <div class="card-desc">جامع‌ترین مجموعه کانفیگ‌های تست‌شده با الگوی رسمی ۵ خطی Goodbaye و بدون تکراری.</div>
             <div class="card-actions">
                 <button class="btn btn-copy" onclick="copyLink('all_servers.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="showQR('all_servers.txt', 'پکیج اصلی All VIP')">📱 بارکد QR</button>
+                <button class="btn btn-qr" onclick="openQR('all_servers.txt', 'پکیج اصلی All VIP')">📱 بارکد QR</button>
             </div>
         </div>
 
-        <!-- کارت لایت -->
-        <div class="config-card" data-op="all mci irancell wifi">
-            <div class="card-header">
-                <div class="card-title">⚡ پکیج لایت (Lite Ultra)</div>
-                <div class="card-tag">فوق‌سریع</div>
+        <!-- پکیج لایت -->
+        <div class="config-card" data-tags="all mci irancell wifi rightel لایت فوق سریع گیمینگ lite">
+            <div class="card-top">
+                <div class="card-title">⚡ پکیج لایت (Ultra Fast Lite)</div>
+                <div class="card-badge">کم‌پینگ‌ترین‌ها</div>
             </div>
-            <p style="font-size: 0.8rem; color: #94a3b8;">گلچین سرورهای کم‌پینگ مخصوص گیمینگ و وبگردی روان</p>
+            <div class="card-desc">گلچین سبک‌ترین و سریع‌ترین سرورها برای وبگردی روان، یوتیوب و بازی آنلاین.</div>
             <div class="card-actions">
                 <button class="btn btn-copy" onclick="copyLink('servers/lite.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="showQR('servers/lite.txt', 'پکیج لایت Ultra')">📱 بارکد QR</button>
+                <button class="btn btn-qr" onclick="openQR('servers/lite.txt', 'پکیج لایت Ultra Fast')">📱 بارکد QR</button>
             </div>
         </div>
 
         <!-- بدون کلودفلر -->
-        <div class="config-card" data-op="all mci wifi">
-            <div class="card-header">
-                <div class="card-title">🛡️ بدون کلودفلر (No-CF)</div>
-                <div class="card-tag">ضد اختلال</div>
+        <div class="config-card" data-tags="all mci wifi ضد اختلال بدون کلودفلر no cloudflare">
+            <div class="card-top">
+                <div class="card-title">🛡️ پکیج بدون کلودفلر (No-CF)</div>
+                <div class="card-badge">ضد اختلال</div>
             </div>
-            <p style="font-size: 0.8rem; color: #94a3b8;">مخصوص مواقعی که دامنه و IPهای کلودفلر دچار افت شدید هستند</p>
+            <div class="card-desc">مخصوص شرایطی که آی‌پی‌ها و CDNهای کلودفلر توسط اپراتورها دچار فیلترینگ شدید می‌شوند.</div>
             <div class="card-actions">
                 <button class="btn btn-copy" onclick="copyLink('servers/no_cloudflare.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="showQR('servers/no_cloudflare.txt', 'پکیج بدون کلودفلر')">📱 بارکد QR</button>
+                <button class="btn btn-qr" onclick="openQR('servers/no_cloudflare.txt', 'پکیج بدون کلودفلر')">📱 بارکد QR</button>
             </div>
         </div>
 
         <!-- پروکسی اضطراری -->
-        <div class="config-card" data-op="socks">
-            <div class="card-header">
+        <div class="config-card" data-tags="all socks تلگرام پروکسی اضطراری socks5">
+            <div class="card-top">
                 <div class="card-title">🚨 پروکسی اضطراری SOCKS5</div>
-                <div class="card-tag">اتصال آنی تلگرام</div>
+                <div class="card-badge emergency">اتصال فوری</div>
             </div>
-            <p style="font-size: 0.8rem; color: #94a3b8;">پروتکل‌های اضطراری برای وصل شدن مستقیم به پیام‌رسان‌ها</p>
+            <div class="card-desc">پروتکل‌های اضطراری جهت اتصال مستقیم و آنی به پیام‌رسان تلگرام در زمان قطعی سراسری.</div>
             <div class="card-actions">
                 <button class="btn btn-copy" onclick="copyLink('servers/emergency_socks5.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="showQR('servers/emergency_socks5.txt', 'پروکسی اضطراری SOCKS5')">📱 بارکد QR</button>
+                <button class="btn btn-qr" onclick="openQR('servers/emergency_socks5.txt', 'پروکسی اضطراری SOCKS5')">📱 بارکد QR</button>
             </div>
         </div>
 
-        <!-- VLESS -->
-        <div class="config-card" data-op="all mci irancell wifi">
-            <div class="card-header">
-                <div class="card-title">🔷 ساب اختصاصی VLESS</div>
-                <div class="card-tag">Reality & gRPC</div>
+        <!-- ساب VLESS -->
+        <div class="config-card" data-tags="all mci irancell wifi rightel vless reality grpc">
+            <div class="card-top">
+                <div class="card-title">🔷 سابسکریپشن VLESS</div>
+                <div class="card-badge">Reality &amp; gRPC</div>
             </div>
-            <p style="font-size: 0.8rem; color: #94a3b8;">کانفیگ‌های VLESS همراه با متدهای امنیتی جدید Reality</p>
+            <div class="card-desc">کانفیگ‌های مدرن و ضد فیلتر پروتکل VLESS همراه با متدهای امنیتی روز.</div>
             <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/vless.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="showQR('servers/vless.txt', 'ساب اختصاصی VLESS')">📱 بارکد QR</button>
+                <button class="btn btn-copy" onclick="copyLink('servers/vless_servers.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="openQR('servers/vless_servers.txt', 'ساب VLESS')">📱 بارکد QR</button>
             </div>
         </div>
 
-        <!-- VMess -->
-        <div class="config-card" data-op="all wifi">
-            <div class="card-header">
-                <div class="card-title">🔶 ساب اختصاصی VMess</div>
-                <div class="card-tag">پایدار</div>
+        <!-- ساب VMess -->
+        <div class="config-card" data-tags="all wifi irancell vmess">
+            <div class="card-top">
+                <div class="card-title">🔶 سابسکریپشن VMess</div>
+                <div class="card-badge">پایدار</div>
             </div>
-            <p style="font-size: 0.8rem; color: #94a3b8;">کانفیگ‌های VMess با ریمارک ۵ خطی استاندارد Goodbaye</p>
+            <div class="card-desc">کانفیگ‌های استاندارد VMess با ریمارک ۵ خطی دیکودشده بدون تداخل.</div>
             <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/vmess.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="showQR('servers/vmess.txt', 'ساب اختصاصی VMess')">📱 بارکد QR</button>
+                <button class="btn btn-copy" onclick="copyLink('servers/vmess_servers.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="openQR('servers/vmess_servers.txt', 'ساب VMess')">📱 بارکد QR</button>
+            </div>
+        </div>
+
+        <!-- ساب Trojan -->
+        <div class="config-card" data-tags="all mci wifi trojan">
+            <div class="card-top">
+                <div class="card-title">🟩 سابسکریپشن Trojan</div>
+                <div class="card-badge">امنیت بالا</div>
+            </div>
+            <div class="card-desc">پروتکل قدرتمند و امن تروجان جهت دور زدن دیوارهای آتشین شبکه ملی.</div>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('servers/trojan_servers.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="openQR('servers/trojan_servers.txt', 'ساب Trojan')">📱 بارکد QR</button>
+            </div>
+        </div>
+
+        <!-- ساب Shadowsocks -->
+        <div class="config-card" data-tags="all irancell wifi ss shadowsocks">
+            <div class="card-top">
+                <div class="card-title">🛡️ سابسکریپشن Shadowsocks</div>
+                <div class="card-badge">سبک و سریع</div>
+            </div>
+            <div class="card-desc">سرورهای سبک و پایدار شادوساکس با مصرف بهینه باتری و اینترنت.</div>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('servers/ss_servers.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="openQR('servers/ss_servers.txt', 'ساب Shadowsocks')">📱 بارکد QR</button>
+            </div>
+        </div>
+
+        <!-- ساب Hysteria2 -->
+        <div class="config-card" data-tags="all mci irancell wifi rightel hysteria2 hy2 udp">
+            <div class="card-top">
+                <div class="card-title">🟪 سابسکریپشن Hysteria2</div>
+                <div class="card-badge">UDP High-Speed</div>
+            </div>
+            <div class="card-desc">پرسرعت‌ترین پروتکل مبتنی بر UDP مخصوص دور زدن اختلالات پهنای باند.</div>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('servers/hysteria2_servers.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="openQR('servers/hysteria2_servers.txt', 'ساب Hysteria2')">📱 بارکد QR</button>
+            </div>
+        </div>
+
+        <!-- ساب TUIC -->
+        <div class="config-card" data-tags="all mci irancell wifi rightel tuic quic">
+            <div class="card-top">
+                <div class="card-title">🌸 سابسکریپشن TUIC</div>
+                <div class="card-badge">QUIC Ultra</div>
+            </div>
+            <div class="card-desc">پروتکل مدرن با تاخیر صفر (0-RTT) جهت برقراری سریع‌ترین اتصال اولیه.</div>
+            <div class="card-actions">
+                <button class="btn btn-copy" onclick="copyLink('servers/tuic_servers.txt')">📋 کپی لینک ساب</button>
+                <button class="btn btn-qr" onclick="openQR('servers/tuic_servers.txt', 'ساب TUIC')">📱 بارکد QR</button>
             </div>
         </div>
     </div>
 
-    <!-- دکمه‌های رسمی تلگرام طبق اصل دوم منشور -->
-    <div class="official-links">
-        <a href="https://t.me/Goodbaye_filtering" target="_blank" class="link-btn link-main">
+    <!-- بخش تفکیک کشورها -->
+    <div class="section-title">🌍 سابسکریپشن‌های تفکیک‌شده بر اساس کشورها</div>
+    <div class="countries-grid" id="countryCards">
+        <div class="country-card" data-tags="آلمان germany de">
+            <div class="c-info"><span>🇩🇪</span><span>آلمان</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/germany.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/germany.txt', 'کانفیگ‌های آلمان')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="فنلاند finland fi">
+            <div class="c-info"><span>🇫🇮</span><span>فنلاند</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/finland.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/finland.txt', 'کانفیگ‌های فنلاند')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="آمریکا united states us usa">
+            <div class="c-info"><span>🇺🇸</span><span>آمریکا</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/united_states.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/united_states.txt', 'کانفیگ‌های آمریکا')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="هلند netherlands nl">
+            <div class="c-info"><span>🇳🇱</span><span>هلند</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/netherlands.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/netherlands.txt', 'کانفیگ‌های هلند')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="ترکیه turkey tr">
+            <div class="c-info"><span>🇹🇷</span><span>ترکیه</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/turkey.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/turkey.txt', 'کانفیگ‌های ترکیه')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="انگلیس united kingdom gb uk">
+            <div class="c-info"><span>🇬🇧</span><span>انگلیس</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/united_kingdom.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/united_kingdom.txt', 'کانفیگ‌های انگلیس')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="فرانسه france fr">
+            <div class="c-info"><span>🇫🇷</span><span>فرانسه</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/france.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/france.txt', 'کانفیگ‌های فرانسه')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="ژاپن japan jp">
+            <div class="c-info"><span>🇯🇵</span><span>ژاپن</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/japan.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/japan.txt', 'کانفیگ‌های ژاپن')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="سوئد sweden se">
+            <div class="c-info"><span>🇸🇪</span><span>سوئد</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/sweden.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/sweden.txt', 'کانفیگ‌های سوئد')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="سنگاپور singapore sg">
+            <div class="c-info"><span>🇸🇬</span><span>سنگاپور</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/singapore.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/singapore.txt', 'کانفیگ‌های سنگاپور')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="مالزی malaysia my">
+            <div class="c-info"><span>🇲🇾</span><span>مالزی</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/malaysia.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/malaysia.txt', 'کانفیگ‌های مالزی')">QR</button>
+            </div>
+        </div>
+        <div class="country-card" data-tags="روسیه russia ru">
+            <div class="c-info"><span>🇷🇺</span><span>روسیه</span></div>
+            <div class="c-btns">
+                <button class="mini-btn" onclick="copyLink('servers/countries/russia.txt')">کپی</button>
+                <button class="mini-btn" onclick="openQR('servers/countries/russia.txt', 'کانفیگ‌های روسیه')">QR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- دکمه‌های رسمی تلگرام (اصل دوم منشور) -->
+    <div class="official-channels">
+        <a href="https://t.me/Goodbaye_filtering" target="_blank" class="tg-link tg-main">
             📢 کانال اصلی Goodbaye Filtering
         </a>
-        <a href="https://t.me/CONFIG_V2RAY_VIP" target="_blank" class="link-btn link-vip">
+        <a href="https://t.me/CONFIG_V2RAY_VIP" target="_blank" class="tg-link tg-vip">
             ⚡ کانال و گروه گفتگوی VIP
         </a>
     </div>
 </div>
 
-<!-- Modal QR Code -->
+<!-- Modal بارکد QR پویا -->
 <div class="modal" id="qrModal" onclick="closeQR(event)">
-    <div class="modal-content" onclick="event.stopPropagation()">
-        <h3 id="modalTitle" style="font-size: 1.1rem; margin-bottom: 5px;">بارکد QR</h3>
-        <p style="font-size: 0.75rem; color: #94a3b8;">اسکن با دوربین نرم‌افزار v2rayNG یا Hiddify</p>
-        <img id="qrImage" src="" alt="QR Code">
-        <button class="btn-close" onclick="document.getElementById('qrModal').style.display='none'">بستن</button>
+    <div class="modal-card" onclick="event.stopPropagation()">
+        <h3 id="modalTitle" style="font-size: 1.05rem; font-weight: 800; color: #f8fafc;">بارکد QR</h3>
+        <p style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">اسکن با دوربین نرم‌افزارهای v2rayNG یا Hiddify</p>
+        <img id="qrImage" src="" alt="Dynamic QR">
+        <button class="btn-close" onclick="document.getElementById('qrModal').style.display='none'">بستن پنجره</button>
     </div>
 </div>
 
+<!-- پیام تایید کپی -->
 <div class="toast" id="toast">لینک سابسکریپشن با موفقیت کپی شد!</div>
 
 <script>
     const BASE_URL = "https://alireza786786.github.io/Free-V2ray-Configs/";
 
-    function copyLink(subPath) {
-        const fullUrl = BASE_URL + subPath;
+    function copyLink(path) {
+        const fullUrl = BASE_URL + path;
         navigator.clipboard.writeText(fullUrl).then(() => {
             const toast = document.getElementById("toast");
             toast.style.display = "block";
@@ -463,8 +759,8 @@
         });
     }
 
-    function showQR(subPath, title) {
-        const fullUrl = BASE_URL + subPath;
+    function openQR(path, title) {
+        const fullUrl = BASE_URL + path;
         document.getElementById("modalTitle").innerText = title;
         document.getElementById("qrImage").src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(fullUrl)}`;
         document.getElementById("qrModal").style.display = "flex";
@@ -474,19 +770,35 @@
         document.getElementById("qrModal").style.display = "none";
     }
 
-    function filterCards(tag) {
-        const cards = document.querySelectorAll(".config-card");
-        const btns = document.querySelectorAll(".op-btn");
+    function filterOperator(op) {
+        const btns = document.querySelectorAll("#opTabs .tab-btn");
         btns.forEach(b => b.classList.remove("active"));
         event.target.classList.add("active");
 
+        const cards = document.querySelectorAll("#mainCards .config-card");
         cards.forEach(card => {
-            const ops = card.getAttribute("data-op");
-            if (tag === 'all' || ops.includes(tag)) {
+            const tags = card.getAttribute("data-tags") || "";
+            if (op === 'all' || tags.includes(op)) {
                 card.style.display = "block";
             } else {
                 card.style.display = "none";
             }
+        });
+    }
+
+    function liveSearch() {
+        const query = document.getElementById("searchInput").value.toLowerCase().trim();
+        const mainCards = document.querySelectorAll("#mainCards .config-card");
+        const countryCards = document.querySelectorAll("#countryCards .country-card");
+
+        mainCards.forEach(card => {
+            const text = (card.innerText + " " + card.getAttribute("data-tags")).toLowerCase();
+            card.style.display = text.includes(query) ? "block" : "none";
+        });
+
+        countryCards.forEach(card => {
+            const text = (card.innerText + " " + card.getAttribute("data-tags")).toLowerCase();
+            card.style.display = text.includes(query) ? "flex" : "none";
         });
     }
 </script>
