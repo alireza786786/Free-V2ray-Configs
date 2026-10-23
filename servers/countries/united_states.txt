@@ -1,0 +1,1 @@
+vless://39947382-3212-41c9-bc3a-589574ac8b23@uae.unixzone.us:22573?encryption=none&amp;security=none&amp;type=ws&amp;host=uae.unixzone.us&amp;path=/#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%BA%F0%9F%87%B8%20%D8%A2%D9%85%D8%B1%DB%8C%DA%A9%D8%A7%0A%C2%AE%EF%B8%8FUae%20DC%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1WebSocket%20CDN%20%7C%20VLESS%20IPv4
