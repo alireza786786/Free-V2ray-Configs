@@ -30,7 +30,7 @@ jobs:
       - name: Run Telegram Collector
         run: python src/telegram_collector.py
 
-      # --- مدیریت چرخش ۳ توکن کلاسیک (سهمیه ۱۵,۰۰۰ درخواست در ساعت) ---
+      # --- مدیریت چرخش ۳ توکن کلاسیک بدون انقضا ---
       - name: Select Token (3-Token Rotation)
         id: select-token
         run: |
@@ -78,12 +78,31 @@ jobs:
       - name: Rebuild protocol & country files with Goodbaye 5-Line Remark
         run: python src/rebuild_protocols.py
 
-      # --- ارسال به تلگرام در هر دور ششم (هر ۳ ساعت یک‌بار) ---
+      # --- شمارنده همگام ۳ ساعته (دور ششم) ---
+      - name: Increment 3-Hour Cycle Counter
+        run: |
+          mkdir -p data
+          COUNTER_FILE="data/publish_counter.txt"
+          COUNT=0
+          if [ -f "$COUNTER_FILE" ]; then
+            COUNT=$(cat "$COUNTER_FILE")
+          fi
+          COUNT=$((COUNT + 1))
+          echo "$COUNT" > "$COUNTER_FILE"
+          echo "Cycle run #$COUNT"
+
+      # --- ارسال به تلگرام (۳ پکیج تأییدشده در دور ششم) ---
       - name: Publish to Telegram (Every 6th run)
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TARGET_CHAT_ID: ${{ secrets.TARGET_CHAT_ID || '@Goodbaye_filtering' }}
         run: python src/telegram_publisher.py
+
+      # --- انتشار Release رسمی گیت‌هاب با قالب VestraNet (در دور ششم) ---
+      - name: Publish GitHub Release (Every 6th run)
+        env:
+          GITHUB_TOKEN: ${{ steps.select-token.outputs.token }}
+        run: python src/release_publisher.py
 
       - name: Commit and push updated files
         timeout-minutes: 5
