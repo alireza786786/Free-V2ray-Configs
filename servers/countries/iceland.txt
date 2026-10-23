@@ -1,2 +1,0 @@
-vless://495c7195-85b8-498a-bf20-2ea9ce9175b5@167.148.156.160:8443?host=snip.edgeoneai.cc.cd&path=%2Ffp%3Dchrome&security=tls&sni=snip.edgeoneai.cc.cd&type=ws
-vless://250865f0-4a0f-4e2e-8d14-4c39a25d0bef@nether2.noirex.ir:8444?encryption=none&fp=chrome&headertype=none&pbk=KWZ8_wctsfsW_vURZto-YOre2VlFM4HS_duhfUU5UxI&security=reality&sid=0739285d&sni=www3.donyumvps.tr&type=tcp
