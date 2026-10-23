@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==============================================================================
 # Goodbaye Universal Standard - Telegram Publisher (Every 6th Run / 3 Hours)
-# Broadcasts ONLY all_servers.txt with 4 Glass Buttons & Jalali Caption
+# Rules: 3 Approved Packages Only | Hard Safety Cap (<3500) | 4 Inline Buttons
 # Repository: https://github.com/alireza786786/Free-V2ray-Configs
 # ==============================================================================
 
@@ -22,10 +22,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger("telegram_publisher")
 
 COUNTER_FILE = "data/publish_counter.txt"
-ALL_SERVERS = "all_servers.txt"
 DEFAULT_TARGET_CHAT = "@Goodbaye_filtering"
 BASE_URL = "https://alireza786786.github.io/Free-V2ray-Configs"
 
+# Maximum safe config count per file to prevent channel spam
+MAX_SAFE_CONFIG_LIMIT = 3500
+
+# 4 Official Inline Glass Buttons (Principle 2)
 INLINE_KEYBOARD = {
     "inline_keyboard": [
         [{"text": "📢 کانال اصلی Goodbaye Filtering", "url": "https://t.me/Goodbaye_filtering"}],
@@ -39,7 +42,7 @@ def get_tehran_time():
     tz_tehran = timezone(timedelta(hours=3, minutes=30))
     return datetime.now(timezone.utc).astimezone(tz_tehran)
 
-def build_caption(config_count: int) -> str:
+def build_caption(package_title: str, file_path: str, count: int) -> str:
     now_tehran = get_tehran_time()
     if jdatetime:
         j_now = jdatetime.datetime.fromgregorian(datetime=now_tehran)
@@ -50,14 +53,14 @@ def build_caption(config_count: int) -> str:
     time_str = now_tehran.strftime("%H:%M")
 
     return (
-        f"🚀 *مجموعه کانفیگ‌های تست‌شده و زنده (پکیج اصلی و جامع All VIP)*\n"
+        f"🚀 *مجموعه کانفیگ‌های تست‌شده و زنده ({package_title})*\n"
         f"📡 مناسب دوران اختلال، فیلترینگ و شبکه ملی\n\n"
         f"📅 تاریخ شمسی: `{date_str}`\n"
         f"⏰ ساعت تهران: `{time_str}`\n"
         f"📊 شاخص کیفیت: `VIP Strict (Ping < 500ms)`\n"
-        f"🔢 تعداد کانفیگ سالم این فایل: `{config_count}`\n\n"
+        f"🔢 تعداد کانفیگ سالم این فایل: `{count}`\n\n"
         f"🌐 لینک مستقیم دانلود / سابسکریپشن:\n"
-        f"`{BASE_URL}/all_servers.txt`"
+        f"`{BASE_URL}/{file_path}`"
     )
 
 def main():
@@ -65,10 +68,10 @@ def main():
     target_chat = os.getenv("TARGET_CHAT_ID", DEFAULT_TARGET_CHAT)
 
     if not bot_token:
-        logger.info("BOT_TOKEN is not set. Skipping Telegram publisher.")
+        logger.info("BOT_TOKEN is not configured. Skipping Telegram broadcast.")
         return
 
-    # --- مدیریت شمارنده ارسال دور ششم (هر ۳ ساعت) ---
+    # Check 6th cycle counter (every 3 hours)
     Path("data").mkdir(exist_ok=True)
     count = 0
     if Path(COUNTER_FILE).exists():
@@ -77,48 +80,55 @@ def main():
         except Exception:
             count = 0
 
-    count += 1
-    Path(COUNTER_FILE).write_text(str(count), encoding="utf-8")
-
-    logger.info(f"Current Execution Cycle: #{count} / 6")
-
-    # اگر هنوز دور ششم نرسیده است، پیام ارسال نمی‌شود
     if count % 6 != 0:
-        logger.info(f"⏳ Cycle #{count}: Skipping broadcast. Will broadcast on cycle #6 (every 3 hours).")
+        logger.info(f"⏳ Cycle #{count % 6}/6: Telegram broadcast deferred until cycle #6 (every 3 hours).")
         return
 
-    logger.info("🚀 6th Cycle Reached! Broadcasting 'all_servers.txt' to Telegram...")
+    logger.info(f"🚀 Cycle #{count}: Starting Telegram broadcast for 3 approved packages...")
 
-    if not Path(ALL_SERVERS).exists():
-        logger.warning(f"{ALL_SERVERS} not found.")
-        return
+    # The ONLY 3 Approved Packages
+    APPROVED_PACKAGES = [
+        ("all_servers.txt", "پکیج اصلی و جامع All VIP"),
+        ("servers/lite.txt", "پکیج فوق‌سریع لایت Ultra"),
+        ("servers/emergency_socks5.txt", "پروکسی‌های اضطراری SOCKS5")
+    ]
 
-    with open(ALL_SERVERS, "r", encoding="utf-8", errors="ignore") as f:
-        lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+    for file_path, title in APPROVED_PACKAGES:
+        p = Path(file_path)
+        if not p.exists():
+            continue
 
-    if not lines:
-        logger.warning(f"{ALL_SERVERS} is empty.")
-        return
+        with open(p, "r", encoding="utf-8", errors="ignore") as f:
+            lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
 
-    caption = build_caption(len(lines))
-    url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+        total_lines = len(lines)
+        if total_lines == 0:
+            continue
 
-    try:
-        with open(ALL_SERVERS, "rb") as doc:
-            files = {"document": ("all_servers.txt", doc, "text/plain")}
-            data = {
-                "chat_id": target_chat,
-                "caption": caption,
-                "parse_mode": "Markdown",
-                "reply_markup": json.dumps(INLINE_KEYBOARD)
-            }
-            resp = requests.post(url, data=data, files=files, timeout=30)
-            if resp.status_code == 200:
-                logger.info(f"✅ Successfully published all_servers.txt ({len(lines)} configs) to {target_chat}")
-            else:
-                logger.error(f"❌ Telegram API Error ({resp.status_code}): {resp.text}")
-    except Exception as e:
-        logger.error(f"❌ Error sending document: {e}")
+        # Hard Safety Guard against 20k+ spam
+        if total_lines > MAX_SAFE_CONFIG_LIMIT:
+            logger.warning(f"🚨 Safety Alert: '{file_path}' has {total_lines} configs (exceeds {MAX_SAFE_CONFIG_LIMIT}). Blocked to protect channel.")
+            continue
+
+        caption = build_caption(title, file_path, total_lines)
+        url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+
+        try:
+            with open(p, "rb") as doc:
+                files = {"document": (p.name, doc, "text/plain")}
+                data = {
+                    "chat_id": target_chat,
+                    "caption": caption,
+                    "parse_mode": "Markdown",
+                    "reply_markup": json.dumps(INLINE_KEYBOARD)
+                }
+                resp = requests.post(url, data=data, files=files, timeout=35)
+                if resp.status_code == 200:
+                    logger.info(f"✅ Published '{title}' ({total_lines} configs) to {target_chat}")
+                else:
+                    logger.error(f"❌ Telegram API Error ({resp.status_code}): {resp.text}")
+        except Exception as e:
+            logger.error(f"❌ Network error sending {file_path}: {e}")
 
 if __name__ == "__main__":
     main()
