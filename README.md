@@ -26,6 +26,9 @@
   <a href="https://t.me/CONFIG_V2RAY_VIP" target="_blank">
     <img src="https://img.shields.io/badge/VIP-Discussion_Group-F59E0B?style=for-the-badge&logo=telegram" alt="Telegram VIP">
   </a>
+  <a href="https://alireza786786.github.io/Free-V2ray-Configs/" target="_blank">
+    <img src="https://img.shields.io/badge/Web_Panel-Online-10B981?style=for-the-badge&logo=google-chrome" alt="Web Panel">
+  </a>
 </div>
 
 <div align="center" style="margin-bottom: 20px;">
@@ -89,13 +92,21 @@
     <td>پویش مداوم گیت‌هاب و تلگرام برای کشف مخازن و کانال‌های جدید و افزودن پویای آن‌ها به سیستم.</td>
 </tr>
 <tr>
-    <td><strong>📢 انتشار خودکار در تلگرام</strong></td>
-    <td>ارسال بسته‌ها به کانال اصلی همراه با ۴ دکمه شیشه‌ای رسمی و کپشن استاندارد با تاریخ شمسی و ساعت رسمی تهران.</td>
+    <td><strong>💾 پالایش سمانتیک و عدم انباشت</strong></td>
+    <td>حذف قطعی تکراری‌ها بر اساس شناسه فنی سرورها و خروجی دلتا؛ جلوگیری از انباشت ۱۰۰ هزارتایی و تضمین سرعت ۲ دقیقه‌ای.</td>
+</tr>
+<tr>
+    <td><strong>🌿 یادگیری پویای شاخه‌ها (Branch Discovery)</strong></td>
+    <td>شناسایی خودکار شاخه‌های تازه در مخازن و ذخیره‌سازی دائمی آن‌ها برای اجراهای بعدی.</td>
+</tr>
+<tr>
+    <td><strong>🚀 اجرای کاملاً رایگان و خودکار</strong></td>
+    <td>خط لوله خودکار متکی بر GitHub Actions بدون نیاز به هیچ‌گونه سرور مجازی یا پرداخت هزینه.</td>
 </tr>
 </tbody>
 </table>
 
-<img src="line.gif" alt="separator" style="display: block; margin: 30px auto;" />
+<img src="https://github.com/user-attachments/assets/10f7cba4-523a-4dd2-a6b3-e7eaba3e8ecf" alt="separator" style="display: block; margin: 30px auto;" />
 
 ## 🏷️ الگوی ۵ خطی نام کانفیگ‌ها (اصل اول منشور)
 
@@ -109,7 +120,7 @@
 ⚡[قابلیت واقعی] | [نوع پروتکل و نسخه IP]
 ```
 
-<img src="line.gif" alt="separator" style="display: block; margin: 30px auto;" />
+<img src="https://github.com/user-attachments/assets/10f7cba4-523a-4dd2-a6b3-e7eaba3e8ecf" alt="separator" style="display: block; margin: 30px auto;" />
 
 ## 📁 فایل‌ها و لینک‌های سابسکریپشن مستقیم
 
@@ -117,18 +128,21 @@
 
 | نوع اشتراک | عنوان پکیج | توضیحات | لینک دانلود / سابسکریپشن |
 | :--- | :--- | :--- | :--- |
-| **کل سرورها** | `all_servers.txt` | تمام پروتکل‌های تست‌شده (Ping < 500ms) | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/all_servers.txt) |
-| **فوق‌سریع** | `servers/lite.txt` | گلچین برترین سرورهای کم‌پینگ برای گیمینگ | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/lite.txt) |
-| **ضد اختلال** | `servers/no_cloudflare.txt` | سرورهای مستقل و بدون وابستگی به کلودفلر | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/no_cloudflare.txt) |
+| **کل سرورها** | `all_servers.txt` | تمام پروتکل‌های تست‌شده و بدون تکرار (Ping < 500ms) | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/all_servers.txt) |
+| **فوق‌سریع** | `servers/lite.txt` | گلچین برترین سرورهای کم‌پینگ برای گیمینگ و وبگردی | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/lite.txt) |
+| **ضد اختلال** | `servers/no_cloudflare.txt` | سرورهای مستقل و بدون وابستگی به شبکه کلودفلر | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/no_cloudflare.txt) |
 | **اضطراری** | `servers/emergency_socks5.txt` | پروکسی‌های SOCKS5 جهت اتصال سریع پیام‌رسان‌ها | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/emergency_socks5.txt) |
-| **پروتکل VLESS** | `servers/vless.txt` | کانفیگ‌های اختصاصی VLESS و Reality | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/vless.txt) |
-| **پروتکل VMess** | `servers/vmess.txt` | کانفیگ‌های پایدار VMess با ریمارک رسمی | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/vmess.txt) |
-| **پروتکل Trojan** | `servers/trojan.txt` | سرورهای تروجان با امنیت بالا | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/trojan.txt) |
-| **پروتکل Shadowsocks** | `servers/ss.txt` | سرورهای سبک و امن Shadowsocks | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/ss.txt) |
+| **پروتکل VLESS** | `servers/vless_servers.txt` | کانفیگ‌های اختصاصی VLESS و Reality با ریمارک رسمی | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/vless_servers.txt) |
+| **پروتکل VMess** | `servers/vmess_servers.txt` | کانفیگ‌های پایدار VMess با ریمارک ۵ خطی استاندارد | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/vmess_servers.txt) |
+| **پروتکل Trojan** | `servers/trojan_servers.txt` | سرورهای تروجان با امنیت بالا و اتصال پایدار | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/trojan_servers.txt) |
+| **پروتکل Shadowsocks** | `servers/ss_servers.txt` | سرورهای سبک و امن پروتکل Shadowsocks | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/ss_servers.txt) |
+| **پروتکل Hysteria2** | `servers/hysteria2_servers.txt` | سرورهای پرسرعت UDP Hysteria2 مخصوص اختلال شدید | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/hysteria2_servers.txt) |
+| **پروتکل TUIC** | `servers/tuic_servers.txt` | کانفیگ‌های نوین و پرسرعت مبتنی بر پروتکل TUIC | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/tuic_servers.txt) |
+| **پروتکل SOCKS5** | `servers/socks5_servers.txt` | سرورهای مستقیم و امن SOCKS5 | [دانلود مستقیم](https://alireza786786.github.io/Free-V2ray-Configs/servers/socks5_servers.txt) |
 
 > 🌐 **ورود به پنل آنلاین با بارکد QR پویا:** [وب‌پنل آنلاین سابسکریپشن Goodbaye](https://alireza786786.github.io/Free-V2ray-Configs/)
 
-<img src="line.gif" alt="separator" style="display: block; margin: 30px auto;" />
+<img src="https://github.com/user-attachments/assets/10f7cba4-523a-4dd2-a6b3-e7eaba3e8ecf" alt="separator" style="display: block; margin: 30px auto;" />
 
 ## 🗂️ ساختار فایل‌های مخزن
 
@@ -149,6 +163,7 @@
 │   ├── telegram_collector.py          # موتور استخراج تلگرام بدون نیاز به API
 │   ├── split_links.py                 # جداکننده لینک‌های متصل و چسبیده
 │   ├── dedup_configs.py               # حذف سمانتیک تکراری‌ها و پاکسازی تگ‌ها
+│   ├── rebuild_protocols.py           # بازسازی پروتکل‌ها، کشورها و الگوی ۵ خطی
 │   ├── checker.py                     # موتور تست سرعت (پینگ < 500ms) و ژئولوکیشن
 │   ├── remarker.py                    # موتور ریمارک ۵ خطی رسمی Goodbaye
 │   ├── sharder.py                     # تفکیک و شاردینگ بسته‌ها و تولید آمار وب‌پنل
@@ -163,25 +178,23 @@
 │   ├── discovered_branches.json       # حافظه دائمی شاخه‌های گیت‌هاب
 │   └── token_state.txt                # شمارنده مدیریت سهمیه دو توکنه
 │
-├── servers/                           # سابسکریپشن‌های تفکیکی
-│   ├── lite.txt                       # پکیج لایت و فوق‌سریع
-│   ├── no_cloudflare.txt              # پکیج بدون کلودفلر
-│   ├── emergency_socks5.txt           # پروکسی‌های اضطراری SOCKS5
-│   └── [protocol].txt                 # ساب‌های تفکیک‌شده بر اساس پروتکل
+├── servers/                           # سابسکریپشن‌های تفکیکی بر اساس پروتکل و کشور
+│   ├── countries/                     # پوشه تفکیک ساب‌ها بر اساس کشورها
+│   └── [protocol]_servers.txt         # فایل‌های سابسکریپشن پروتکل‌ها
 │
 ├── for Developers/                    # نسخه‌های مادر و پایگاه داده جامع
 │   ├── collector_git_Fullversion.py   # نسخه کامل کالکتور گیت‌هاب
 │   └── channels_Fullversion.txt       # دیتابیس جامع بیش از ۱۵۰۰ کانال تلگرام
 │
+├── .nojekyll                          # غیرفعال‌سازی پردازش جکیل برای گیت‌هاب پیجز
 ├── banner.jpg                         # تصویر بنر اصلی مخزن
 ├── index.html                         # وب‌پنل رسمی با QR Code پویا بر روی GitHub Pages
-├── all_servers.txt                    # خروجی جامع تمام کانفیگ‌های تست‌شده و زنده
-├── line.gif                           # جداکننده بصری متحرک
+├── all_servers.txt                    # خروجی جامع تمام کانفیگ‌های تست‌شده و بدون تکرار
 ├── README.md                          # مستندات رسمی فارسی
 └── README.EN.md                       # مستندات رسمی انگلیسی
 ```
 
-<img src="line.gif" alt="separator" style="display: block; margin: 30px auto;" />
+<img src="https://github.com/user-attachments/assets/10f7cba4-523a-4dd2-a6b3-e7eaba3e8ecf" alt="separator" style="display: block; margin: 30px auto;" />
 
 ## 🔐 راهنمای تنظیم Secrets در گیت‌هاب
 
@@ -192,7 +205,7 @@
 * `TARGET_CHAT_ID` : آدرس کانال اصلی شما برای انتشار (`@Goodbaye_filtering`).
 * *(اختیاری)* `GH_APP_ID` و `GH_APP_PRIVATE_KEY` : جهت فعال‌سازی چرخش دوگانه توکن برای سقف نامحدود API گیت‌هاب.
 
-<img src="line.gif" alt="separator" style="display: block; margin: 30px auto;" />
+<img src="https://github.com/user-attachments/assets/10f7cba4-523a-4dd2-a6b3-e7eaba3e8ecf" alt="separator" style="display: block; margin: 30px auto;" />
 
 ## 📢 ارتباط با ما
 
@@ -200,7 +213,7 @@
 * **کانال و گروه گفتگوی VIP:** [@CONFIG_V2RAY_VIP](https://t.me/CONFIG_V2RAY_VIP)
 * **وب‌پنل آنلاین:** [https://alireza786786.github.io/Free-V2ray-Configs/](https://alireza786786.github.io/Free-V2ray-Configs/)
 
-<img src="line.gif" alt="separator" style="display: block; margin: 30px auto;" />
+<img src="https://github.com/user-attachments/assets/10f7cba4-523a-4dd2-a6b3-e7eaba3e8ecf" alt="separator" style="display: block; margin: 30px auto;" />
 
 ## 📄 مجوز استفاده (License)
 این پروژه تحت مجوز متن‌باز **MIT** برای دسترسی همگانی به اینترنت آزاد و بدون سانسور منتشر شده است.
