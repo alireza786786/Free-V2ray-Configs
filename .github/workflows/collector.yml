@@ -1,4 +1,4 @@
-name: Unified Collector (auto-chain, dual token)
+name: Unified Collector (auto-chain, 3 tokens)
 
 on:
   workflow_dispatch:      # اجرای دستی و زنجیره‌ای
@@ -30,16 +30,8 @@ jobs:
       - name: Run Telegram Collector
         run: python src/telegram_collector.py
 
-      - name: Generate GitHub App token
-        id: app-token
-        continue-on-error: true
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
-      # --- مدیریت چرخش دوگانه توکن گیت‌هاب ---
-      - name: Select token based on counter
+      # --- مدیریت چرخش ۳ توکن کلاسیک (سهمیه ۱۵,۰۰۰ درخواست در ساعت) ---
+      - name: Select Token (3-Token Rotation)
         id: select-token
         run: |
           mkdir -p data
@@ -48,18 +40,20 @@ jobs:
             echo "0" > "$COUNTER_FILE"
           fi
           COUNTER=$(cat "$COUNTER_FILE")
-          echo "Current counter: $COUNTER"
+          echo "Current token counter: $COUNTER"
 
-          APP_TOKEN="${{ steps.app-token.outputs.token }}"
-          if [ "$COUNTER" -ge 2 ] && [ -n "$APP_TOKEN" ]; then
-            echo "token=$APP_TOKEN" >> $GITHUB_OUTPUT
-            echo "Using GitHub App token (counter $COUNTER)"
-          else
+          if [ "$COUNTER" -eq 0 ]; then
             echo "token=${{ secrets.GH_TOKEN }}" >> $GITHUB_OUTPUT
-            echo "Using Classic token (counter $COUNTER)"
+            echo "Using Token 0 (GH_TOKEN)"
+          elif [ "$COUNTER" -eq 1 ]; then
+            echo "token=${{ secrets.GH_TOKEN_1 }}" >> $GITHUB_OUTPUT
+            echo "Using Token 1 (GH_TOKEN_1)"
+          else
+            echo "token=${{ secrets.GH_TOKEN_2 }}" >> $GITHUB_OUTPUT
+            echo "Using Token 2 (GH_TOKEN_2)"
           fi
 
-          NEXT=$(( (COUNTER + 1) % 4 ))
+          NEXT=$(( (COUNTER + 1) % 3 ))
           echo "$NEXT" > "$COUNTER_FILE"
 
       - name: Run collector
@@ -81,8 +75,15 @@ jobs:
             python src/dedup_configs.py all_servers.txt
           fi
 
-      - name: Rebuild protocol files with Goodbaye 5-Line Remark
+      - name: Rebuild protocol & country files with Goodbaye 5-Line Remark
         run: python src/rebuild_protocols.py
+
+      # --- ارسال به تلگرام در هر دور ششم (هر ۳ ساعت یک‌بار) ---
+      - name: Publish to Telegram (Every 6th run)
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TARGET_CHAT_ID: ${{ secrets.TARGET_CHAT_ID || '@Goodbaye_filtering' }}
+        run: python src/telegram_publisher.py
 
       - name: Commit and push updated files
         timeout-minutes: 5
@@ -96,7 +97,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "🔄 Update all servers [skip ci]"
+            git commit -m "🔄 Update all servers & countries [skip ci]"
             git pull --rebase --strategy-option ours
             git push
           fi
@@ -105,7 +106,7 @@ jobs:
         if: success()
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GH_TOKEN }}
+          github-token: ${{ steps.select-token.outputs.token }}
           script: |
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
