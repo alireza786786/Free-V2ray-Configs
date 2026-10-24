@@ -76,7 +76,7 @@ def main():
         logger.warning("GITHUB_TOKEN not available. Skipping GitHub Release.")
         return
 
-    # Check 6th cycle counter (every 3 hours)
+    # Check 12th cycle counter (every 3 hours)
     count = 0
     if Path(COUNTER_FILE).exists():
         try:
