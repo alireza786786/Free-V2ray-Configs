@@ -1,0 +1,1 @@
+hysteria2://78585441-c8b3-40fb-9b94-15edd312fdcf@202.155.14.134:55555?insecure=1&sni=www.bing.com#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%AE%F0%9F%87%A9%20Indonesia%0A%C2%AE%EF%B8%8FPT%20Deneva%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1UDP%20Fast-Path%20%7C%20HYSTERIA2%20IPv4
