@@ -71,7 +71,7 @@ def main():
         logger.info("BOT_TOKEN is not configured. Skipping Telegram broadcast.")
         return
 
-    # Check 6th cycle counter (every 3 hours)
+    # Check 12th cycle counter (every 3 hours)
     Path("data").mkdir(exist_ok=True)
     count = 0
     if Path(COUNTER_FILE).exists():
