@@ -84,8 +84,8 @@ def main():
         except Exception:
             count = 0
 
-    if count % 6 != 0:
-        logger.info(f"⏳ Cycle #{count % 6}/6: GitHub Release deferred until cycle #6 (every 3 hours).")
+    if count % 12 != 0:
+        logger.info(f"⏳ Cycle #{count % 12}/12: GitHub Release deferred until cycle #12 (every 3 hours).")
         return
 
     now_utc = datetime.now(timezone.utc)
