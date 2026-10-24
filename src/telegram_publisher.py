@@ -80,8 +80,8 @@ def main():
         except Exception:
             count = 0
 
-    if count % 6 != 0:
-        logger.info(f"⏳ Cycle #{count % 6}/6: Telegram broadcast deferred until cycle #6 (every 3 hours).")
+    if count % 12 != 0:
+        logger.info(f"⏳ Cycle #{count % 12}/12: Telegram broadcast deferred until cycle #12 (every 3 hours).")
         return
 
     logger.info(f"🚀 Cycle #{count}: Starting Telegram broadcast for 3 approved packages...")
