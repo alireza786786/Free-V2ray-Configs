@@ -1,0 +1,1 @@
+vless://495c7195-85b8-498a-bf20-2ea9ce9175b5@170.80.111.48:443?sni=snip.edgeoneai.cc.cd&type=ws&host=snip.edgeoneai.cc.cd&path=/fp=chrome&security=tls#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%AC%F0%9F%87%B9%20Guatemala%0A%C2%AE%EF%B8%8FIPXON%20Networks%20G%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1TLS%20High-Speed%20%7C%20VLESS%20IPv4
