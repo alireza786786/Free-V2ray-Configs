@@ -1,0 +1,1 @@
+trojan://bpb-trojan@190.93.244.202:443?path=/tr?ed&amp;security=tls&amp;host=fcspring.ggff.net&amp;type=ws&amp;sni=fcspring.ggff.net#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%A8%F0%9F%87%B7%20Costa%20Rica%0A%C2%AE%EF%B8%8FCloudFlare%20Latin%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1TLS%20High-Speed%20%7C%20TROJAN%20IPv4
