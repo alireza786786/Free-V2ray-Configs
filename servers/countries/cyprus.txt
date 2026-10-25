@@ -1,1 +1,0 @@
-vless://6202b230-417c-4d8e-b624-0f71afa9c75d@77.75.199.30:8880?security=none&amp;type=ws&amp;path=%2F&amp;host=vms.lifetime59.workers.dev&amp;packetEncoding=none#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%A8%F0%9F%87%BE%20Cyprus%0A%C2%AE%EF%B8%8FCloudflare%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1WebSocket%20CDN%20%7C%20VLESS%20IPv4
