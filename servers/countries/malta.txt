@@ -1,1 +1,1 @@
-socks5://213.165.185.211:4153#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%B2%F0%9F%87%B9%20Malta%0A%C2%AE%EF%B8%8FMelita%20plc%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1Emergency%20SOCKS5%20%7C%20SOCKS5%20IPv4
+trojan://ttfang@46.202.30.216:2096/?type=ws&path=Telegram%F0%9F%87%A8%F0%9F%87%B3&security=tls&sni=ttfang.fange.me#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%B2%F0%9F%87%B9%20Malta%0A%C2%AE%EF%B8%8FPrivate%20Customer%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1TLS%20High-Speed%20%7C%20TROJAN%20IPv4
