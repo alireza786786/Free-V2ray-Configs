@@ -85,8 +85,8 @@ jobs:
         timeout-minutes: 25
         run: python -u src/rebuild_protocols.py
 
-      # --- شمارنده همگام ۳ ساعته (دور ششم) ---
-      - name: Increment 3-Hour Cycle Counter
+      # --- شمارنده همگام ۳ ساعته ---
+      - name: Increment Cycle Counter
         run: |
           mkdir -p data
           COUNTER_FILE="data/publish_counter.txt"
@@ -98,15 +98,15 @@ jobs:
           echo "$COUNT" > "$COUNTER_FILE"
           echo "Cycle run #$COUNT"
 
-      # --- ارسال به تلگرام (۳ پکیج تأییدشده در دور ششم) ---
-      - name: Publish to Telegram (Every 6th run)
+      # --- ارسال به تلگرام (۳ پکیج تأییدشده) ---
+      - name: Publish to Telegram
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TARGET_CHAT_ID: ${{ secrets.TARGET_CHAT_ID || '@Goodbaye_filtering' }}
         run: python src/telegram_publisher.py
 
-      # --- انتشار Release رسمی گیت‌هاب با قالب VestraNet (در دور ششم) ---
-      - name: Publish GitHub Release (Every 6th run)
+      # --- انتشار Release رسمی گیت‌هاب با قالب VestraNet ---
+      - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ steps.select-token.outputs.token }}
         run: python src/release_publisher.py
@@ -127,6 +127,13 @@ jobs:
             git pull --rebase --strategy-option ours
             git push
           fi
+
+      # --- استراحت دقیق ۳۰ دقیقه‌ای پس از اتمام کار و پیش از اجرای مجدد ---
+      - name: ⏳ Sleep 30 minutes before next run
+        if: success()
+        run: |
+          echo "All jobs completed successfully. Sleeping for 30 minutes (1800s) before triggering next run..."
+          sleep 1800
 
       - name: Trigger next run
         if: success()
