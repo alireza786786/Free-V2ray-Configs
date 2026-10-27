@@ -75,8 +75,11 @@ jobs:
             python src/dedup_configs.py all_servers.txt
           fi
 
+      # 🔴 تغییر ۱: سقف زمانی اختصاصی (قبلاً باعث می‌شد کل جاب با timeout 120 دقیقه کشته شود)
+      # 🔴 تغییر ۲: -u تا لاگ پایتون بدون بافر و لحظه‌ای نمایش داده شود
       - name: Rebuild protocol & country files with Goodbaye 5-Line Remark
-        run: python src/rebuild_protocols.py
+        timeout-minutes: 25
+        run: python -u src/rebuild_protocols.py
 
       # --- شمارنده همگام ۳ ساعته (دور ششم) ---
       - name: Increment 3-Hour Cycle Counter
@@ -104,6 +107,8 @@ jobs:
           GITHUB_TOKEN: ${{ steps.select-token.outputs.token }}
         run: python src/release_publisher.py
 
+      # 🔴 تغییر ۳: data/ از قبل اضافه می‌شد، اما باید کش‌های geoip_cache.json
+      #              و host_ip_cache.json واقعاً کامیت شوند (از .gitignore حذف شوند)
       - name: Commit and push updated files
         timeout-minutes: 5
         continue-on-error: true
