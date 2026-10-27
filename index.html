@@ -1,807 +1,556 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Goodbaye Filtering — وب‌پنل هوشمند و فوق‌پیشرفته سابسکریپشن V2Ray</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-base: #060913;
-            --bg-card: rgba(15, 23, 42, 0.75);
-            --bg-card-hover: rgba(30, 41, 59, 0.85);
-            --border: rgba(255, 255, 255, 0.08);
-            --border-hover: rgba(59, 130, 246, 0.4);
-            --primary: #3b82f6;
-            --primary-glow: rgba(59, 130, 246, 0.35);
-            --accent: #10b981;
-            --accent-glow: rgba(16, 185, 129, 0.35);
-            --vip: #f59e0b;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --badge-bg: rgba(59, 130, 246, 0.12);
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0b1120">
+<title>Goodbaye Filtering — پنل آنلاین سابسکریپشن V2Ray</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#070b16; --bg2:#0d1424; --card:rgba(19,27,45,.72); --card2:rgba(27,38,62,.85);
+  --line:rgba(255,255,255,.08); --line2:rgba(96,165,250,.45);
+  --txt:#f2f6ff; --muted:#93a2bd; --blue:#3b82f6; --green:#10b981;
+  --amber:#f59e0b; --red:#ef4444; --purple:#8b5cf6;
+  --shadow:0 18px 40px -18px rgba(0,0,0,.75);
+}
+[data-theme="light"]{
+  --bg:#f4f7fc; --bg2:#e8effa; --card:rgba(255,255,255,.86); --card2:#ffffff;
+  --line:rgba(15,23,42,.09); --line2:rgba(37,99,235,.45);
+  --txt:#0f172a; --muted:#5b6b85; --shadow:0 18px 40px -22px rgba(15,23,42,.35);
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Vazirmatn',system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+body{
+  background:radial-gradient(1100px 600px at 50% -10%,var(--bg2),var(--bg) 62%);
+  color:var(--txt);min-height:100vh;padding:18px 14px 70px;
+  transition:background .3s,color .3s;
+}
+.wrap{max-width:1040px;margin:0 auto}
+a{color:inherit;text-decoration:none}
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Vazirmatn', sans-serif;
-            -webkit-tap-highlight-color: transparent;
-        }
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:22px}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;font-size:20px;
+  background:linear-gradient(135deg,#2563eb,#8b5cf6);box-shadow:0 10px 26px -10px var(--blue)}
+.brand h1{font-size:1.02rem;font-weight:800;line-height:1.3}
+.brand span{font-size:.72rem;color:var(--muted);font-weight:500}
+.icon-btn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);
+  background:var(--card);color:var(--txt);font-size:17px;cursor:pointer;display:grid;place-items:center;
+  transition:.2s}
+.icon-btn:hover{border-color:var(--line2);transform:translateY(-1px)}
 
-        body {
-            background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 35%, var(--bg-base) 80%);
-            color: var(--text-main);
-            min-height: 100vh;
-            padding: 25px 15px 60px;
-        }
+.status{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 10px;text-align:center;
+  backdrop-filter:blur(10px);box-shadow:var(--shadow)}
+.stat b{display:block;font-size:1.16rem;font-weight:800;letter-spacing:-.4px}
+.stat small{font-size:.68rem;color:var(--muted)}
+.stat .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-inline-start:4px;
+  box-shadow:0 0 0 3px rgba(16,185,129,.18);animation:pulse 2s infinite}
+@keyframes pulse{50%{opacity:.35}}
 
-        .container {
-            max-width: 980px;
-            margin: 0 auto;
-        }
+.hero{background:linear-gradient(135deg,rgba(37,99,235,.16),rgba(139,92,246,.12));
+  border:1px solid var(--line);border-radius:22px;padding:20px;margin-bottom:20px;text-align:center}
+.hero h2{font-size:1.24rem;font-weight:900;margin-bottom:8px}
+.hero p{color:var(--muted);font-size:.84rem;line-height:1.9;max-width:640px;margin:0 auto}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;font-weight:700;
+  background:rgba(59,130,246,.14);color:#93c5fd;border:1px solid rgba(59,130,246,.3);
+  padding:5px 12px;border-radius:999px;margin-bottom:10px}
+[data-theme="light"] .pill{color:#1d4ed8}
 
-        /* Header */
-        header {
-            text-align: center;
-            margin-bottom: 25px;
-        }
+.toolbar{position:sticky;top:8px;z-index:20;display:flex;gap:8px;margin-bottom:16px;
+  background:var(--card);border:1px solid var(--line);border-radius:16px;padding:8px;
+  backdrop-filter:blur(14px);box-shadow:var(--shadow)}
+.search{flex:1;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.18);
+  border:1px solid var(--line);border-radius:11px;padding:0 12px}
+[data-theme="light"] .search{background:rgba(15,23,42,.04)}
+.search input{flex:1;background:none;border:0;outline:0;color:var(--txt);font-size:.86rem;padding:11px 0;font-family:inherit}
+.search input::placeholder{color:var(--muted)}
+.chip{border:1px solid var(--line);background:transparent;color:var(--muted);font-family:inherit;
+  font-size:.74rem;font-weight:700;padding:9px 13px;border-radius:11px;cursor:pointer;white-space:nowrap;transition:.18s}
+.chip.on{background:rgba(59,130,246,.16);color:#93c5fd;border-color:rgba(59,130,246,.45)}
+[data-theme="light"] .chip.on{color:#1d4ed8}
 
-        .brand-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: linear-gradient(135deg, #2563eb, #3b82f6);
-            color: white;
-            font-size: 0.82rem;
-            font-weight: 700;
-            padding: 6px 16px;
-            border-radius: 9999px;
-            box-shadow: 0 0 25px var(--primary-glow);
-            margin-bottom: 12px;
-        }
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;
+  backdrop-filter:blur(10px);box-shadow:var(--shadow);transition:.22s;position:relative;overflow:hidden}
+.card:hover{border-color:var(--line2);transform:translateY(-2px)}
+.card::after{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:linear-gradient(90deg,var(--blue),var(--purple));opacity:0;transition:.22s}
+.card:hover::after{opacity:1}
+.card.vip::after{background:linear-gradient(90deg,var(--amber),#fb923c);opacity:1}
+.card.lite::after{background:linear-gradient(90deg,var(--green),#34d399);opacity:1}
+.card.nocf::after{background:linear-gradient(90deg,#38bdf8,#22d3ee);opacity:1}
+.card.sos::after{background:linear-gradient(90deg,var(--red),#f87171);opacity:1}
+.c-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+.c-title{font-size:.94rem;font-weight:800;line-height:1.5}
+.tag{font-size:.63rem;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap;
+  background:rgba(59,130,246,.14);color:#93c5fd;border:1px solid rgba(59,130,246,.28)}
+.tag.g{background:rgba(16,185,129,.14);color:#6ee7b7;border-color:rgba(16,185,129,.3)}
+.tag.a{background:rgba(245,158,11,.14);color:#fcd34d;border-color:rgba(245,158,11,.3)}
+.tag.r{background:rgba(239,68,68,.14);color:#fca5a5;border-color:rgba(239,68,68,.3)}
+.c-desc{color:var(--muted);font-size:.77rem;line-height:1.85;margin-bottom:11px;min-height:42px}
+.meta{display:flex;gap:12px;font-size:.7rem;color:var(--muted);margin-bottom:11px;flex-wrap:wrap}
+.meta b{color:var(--txt);font-weight:800}
+.actions{display:flex;gap:7px}
+.btn{flex:1;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--txt);
+  font-family:inherit;font-size:.76rem;font-weight:700;padding:10px;border-radius:11px;cursor:pointer;transition:.18s;
+  display:flex;align-items:center;justify-content:center;gap:5px}
+.btn:hover{background:rgba(59,130,246,.15);border-color:rgba(59,130,246,.4)}
+.btn.primary{background:linear-gradient(135deg,#2563eb,#3b82f6);border-color:transparent;color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{flex:0 0 auto;width:44px;padding:10px 0}
 
-        h1 {
-            font-size: 1.9rem;
-            font-weight: 900;
-            margin-bottom: 8px;
-            background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
+.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-top:14px;box-shadow:var(--shadow)}
+.panel h3{font-size:.9rem;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.pre{background:rgba(0,0,0,.32);border:1px solid var(--line);border-radius:12px;padding:11px;
+  font-family:ui-monospace,Menlo,monospace;font-size:.7rem;line-height:1.9;color:#a5b4fc;
+  max-height:230px;overflow:auto;white-space:pre-wrap;word-break:break-all;direction:ltr;text-align:left}
+[data-theme="light"] .pre{background:rgba(15,23,42,.05);color:#4338ca}
 
-        p.subtitle {
-            color: var(--text-muted);
-            font-size: 0.95rem;
-            line-height: 1.6;
-        }
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
+.cbtn{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.035);border:1px solid var(--line);
+  border-radius:11px;padding:9px 10px;font-size:.75rem;font-weight:600;cursor:pointer;transition:.16s;color:var(--txt);font-family:inherit}
+.cbtn:hover{background:rgba(59,130,246,.14);border-color:var(--line2)}
+.cbtn .fl{font-size:1rem}
 
-        /* Radar & Latency Gauge */
-        .radar-bar {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 18px;
-            padding: 16px 20px;
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            backdrop-filter: blur(14px);
-            margin-bottom: 20px;
-            text-align: center;
-        }
+.steps{display:grid;gap:9px}
+.step{display:flex;gap:10px;align-items:flex-start;background:rgba(255,255,255,.03);border:1px solid var(--line);
+  border-radius:12px;padding:11px}
+.step .n{flex:0 0 24px;height:24px;border-radius:8px;display:grid;place-items:center;font-size:.72rem;font-weight:800;
+  background:rgba(59,130,246,.16);color:#93c5fd}
+.step p{font-size:.78rem;line-height:1.85;color:var(--muted)}
+.step b{color:var(--txt)}
+.apps{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.app{font-size:.72rem;font-weight:700;border:1px solid var(--line);border-radius:10px;padding:8px 12px;
+  background:rgba(255,255,255,.04);cursor:pointer;font-family:inherit;color:var(--txt)}
+.app:hover{border-color:var(--line2);color:#93c5fd}
 
-        .radar-box .val {
-            font-size: 1.25rem;
-            font-weight: 800;
-            color: var(--accent);
-            text-shadow: 0 0 12px var(--accent-glow);
-        }
-
-        .radar-box .lbl {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 3px;
-        }
-
-        /* Search & Filter Bar */
-        .search-box {
-            position: relative;
-            margin-bottom: 18px;
-        }
-
-        .search-box input {
-            width: 100%;
-            background: rgba(15, 23, 42, 0.7);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 12px 42px 12px 16px;
-            color: white;
-            font-size: 0.9rem;
-            outline: none;
-            transition: all 0.2s;
-        }
-
-        .search-box input:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 15px var(--primary-glow);
-        }
-
-        .search-icon {
-            position: absolute;
-            right: 14px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-muted);
-            font-size: 1rem;
-        }
-
-        /* Tabs Nav */
-        .nav-tabs {
-            display: flex;
-            gap: 8px;
-            overflow-x: auto;
-            padding-bottom: 8px;
-            margin-bottom: 15px;
-            scrollbar-width: none;
-        }
-
-        .nav-tabs::-webkit-scrollbar {
-            display: none;
-        }
-
-        .tab-btn {
-            background: rgba(30, 41, 59, 0.5);
-            border: 1px solid var(--border);
-            color: var(--text-muted);
-            padding: 8px 16px;
-            border-radius: 12px;
-            font-size: 0.82rem;
-            font-weight: 600;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: all 0.2s;
-        }
-
-        .tab-btn.active, .tab-btn:hover {
-            background: var(--primary);
-            color: white;
-            border-color: var(--primary);
-            box-shadow: 0 4px 15px var(--primary-glow);
-        }
-
-        /* Section Titles */
-        .section-title {
-            font-size: 1.1rem;
-            font-weight: 800;
-            margin: 25px 0 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #e2e8f0;
-        }
-
-        /* Config Cards Grid */
-        .card-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 14px;
-        }
-
-        @media (min-width: 640px) {
-            .card-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        .config-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 16px 18px;
-            backdrop-filter: blur(10px);
-            transition: all 0.2s ease;
-            position: relative;
-        }
-
-        .config-card:hover {
-            background: var(--bg-card-hover);
-            transform: translateY(-3px);
-            border-color: var(--border-hover);
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-        }
-
-        .card-top {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 8px;
-        }
-
-        .card-title {
-            font-size: 0.98rem;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .card-badge {
-            font-size: 0.7rem;
-            padding: 3px 8px;
-            border-radius: 6px;
-            background: var(--badge-bg);
-            color: #60a5fa;
-            font-weight: 700;
-        }
-
-        .card-badge.vip {
-            background: rgba(245, 158, 11, 0.15);
-            color: #fbbf24;
-        }
-
-        .card-badge.emergency {
-            background: rgba(239, 68, 68, 0.15);
-            color: #f87171;
-        }
-
-        .card-desc {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            line-height: 1.5;
-            margin-bottom: 14px;
-        }
-
-        .card-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .btn {
-            flex: 1;
-            padding: 10px;
-            border: none;
-            border-radius: 10px;
-            font-size: 0.82rem;
-            font-weight: 700;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            transition: all 0.2s ease;
-        }
-
-        .btn-copy {
-            background: #2563eb;
-            color: white;
-        }
-
-        .btn-copy:hover {
-            background: #1d4ed8;
-            box-shadow: 0 4px 12px var(--primary-glow);
-        }
-
-        .btn-qr {
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-main);
-        }
-
-        .btn-qr:hover {
-            background: rgba(255, 255, 255, 0.15);
-        }
-
-        /* Countries Horizontal Grid */
-        .countries-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-        }
-
-        @media (min-width: 640px) {
-            .countries-grid {
-                grid-template-columns: repeat(4, 1fr);
-            }
-        }
-
-        .country-card {
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 10px 12px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: all 0.2s;
-        }
-
-        .country-card:hover {
-            background: rgba(30, 41, 59, 0.8);
-            border-color: var(--border-hover);
-        }
-
-        .c-info {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-
-        .c-btns {
-            display: flex;
-            gap: 4px;
-        }
-
-        .mini-btn {
-            background: rgba(255, 255, 255, 0.08);
-            border: none;
-            border-radius: 6px;
-            padding: 6px 8px;
-            color: white;
-            cursor: pointer;
-            font-size: 0.75rem;
-            transition: background 0.2s;
-        }
-
-        .mini-btn:hover {
-            background: var(--primary);
-        }
-
-        /* QR Modal */
-        .modal {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.85);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            padding: 20px;
-            backdrop-filter: blur(8px);
-        }
-
-        .modal-card {
-            background: #1e293b;
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 24px;
-            text-align: center;
-            max-width: 320px;
-            width: 100%;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
-        }
-
-        .modal-card img {
-            width: 210px;
-            height: 210px;
-            border-radius: 12px;
-            margin: 14px 0;
-            background: white;
-            padding: 8px;
-        }
-
-        .btn-close {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            padding: 10px;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 700;
-            transition: background 0.2s;
-        }
-
-        .btn-close:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        /* Telegram Official Channels */
-        .official-channels {
-            margin-top: 35px;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 12px;
-        }
-
-        @media (min-width: 640px) {
-            .official-channels {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        .tg-link {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            padding: 14px;
-            border-radius: 14px;
-            text-decoration: none;
-            font-weight: 700;
-            font-size: 0.9rem;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .tg-link:hover {
-            transform: translateY(-2px);
-        }
-
-        .tg-main {
-            background: linear-gradient(135deg, #0284c7, #0088cc);
-            color: white;
-            box-shadow: 0 4px 20px rgba(0, 136, 204, 0.35);
-        }
-
-        .tg-vip {
-            background: linear-gradient(135deg, #d97706, #f59e0b);
-            color: white;
-            box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35);
-        }
-
-        /* Toast Alert */
-        .toast {
-            position: fixed;
-            bottom: 25px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #10b981;
-            color: white;
-            padding: 10px 24px;
-            border-radius: 9999px;
-            font-size: 0.85rem;
-            font-weight: 700;
-            box-shadow: 0 5px 20px rgba(16, 185, 129, 0.45);
-            display: none;
-            z-index: 2000;
-        }
-    </style>
+footer{text-align:center;color:var(--muted);font-size:.72rem;margin-top:26px;line-height:2}
+.toast{position:fixed;inset-inline:0;bottom:22px;margin:auto;width:max-content;max-width:90vw;
+  background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-size:.8rem;font-weight:700;
+  padding:11px 20px;border-radius:12px;box-shadow:0 16px 34px -12px rgba(16,185,129,.6);
+  opacity:0;transform:translateY(14px);pointer-events:none;transition:.28s;z-index:80}
+.toast.show{opacity:1;transform:translateY(0)}
+.modal{position:fixed;inset:0;background:rgba(3,7,18,.82);backdrop-filter:blur(6px);
+  display:none;align-items:center;justify-content:center;padding:20px;z-index:90}
+.modal.show{display:flex}
+.modal-in{background:var(--card2);border:1px solid var(--line);border-radius:20px;padding:20px;
+  max-width:330px;width:100%;text-align:center;box-shadow:var(--shadow)}
+.modal-in h4{font-size:.92rem;font-weight:800;margin-bottom:12px}
+.modal-in img{width:220px;height:220px;border-radius:14px;background:#fff;padding:8px;margin:0 auto 12px;display:block}
+.modal-in .url{font-size:.66rem;color:var(--muted);word-break:break-all;direction:ltr;margin-bottom:12px;
+  font-family:ui-monospace,monospace;line-height:1.7}
+.skel{display:inline-block;height:.9em;width:2.6em;border-radius:5px;background:var(--line);vertical-align:-1px;
+  animation:sk 1.2s infinite}
+@keyframes sk{50%{opacity:.35}}
+@media(max-width:640px){
+  .status{grid-template-columns:repeat(2,1fr)}
+  .hero h2{font-size:1.08rem}
+  body{padding:14px 10px 60px}
+}
+</style>
 </head>
 <body>
+<div class="wrap">
 
-<div class="container">
-    <header>
-        <div class="brand-badge">🛡️ Goodbaye Universal Standard</div>
-        <h1>وب‌پنل آنلاین سابسکریپشن V2Ray</h1>
-        <p class="subtitle">کانفیگ‌های زنده با الگوی رسمی ۵ خطی و شاخص سخت‌گیرانه پینگ زیر ۵۰۰ میلی‌ثانیه</p>
-    </header>
-
-    <!-- رادار پایش شبکه -->
-    <div class="radar-bar">
-        <div class="radar-box">
-            <div class="val">Ping &lt; 500ms</div>
-            <div class="lbl">شاخص کیفیت اتصال</div>
-        </div>
-        <div class="radar-box">
-            <div class="val">🟢 فعال و آنلاین</div>
-            <div class="lbl">وضعیت سیستم پایش</div>
-        </div>
-        <div class="radar-box">
-            <div class="val">100% رایگان</div>
-            <div class="lbl">دسترسی اینترنت آزاد</div>
-        </div>
+  <header class="top">
+    <div class="brand">
+      <div class="logo">✈️</div>
+      <div>
+        <h1>Goodbaye Filtering</h1>
+        <span id="updated">در حال به‌روزرسانی…</span>
+      </div>
     </div>
+    <button class="icon-btn" id="themeBtn" title="تغییر تم" aria-label="تغییر تم">🌙</button>
+  </header>
 
-    <!-- کادر جستجوی آنی -->
-    <div class="search-box">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="searchInput" placeholder="جستجوی سریع بین پروتکل‌ها، نام کشورها یا پکیج‌ها..." onkeyup="liveSearch()">
+  <div class="status">
+    <div class="stat"><b id="sAll"><span class="skel"></span></b><small>کل کانفیگ‌ها</small></div>
+    <div class="stat"><b id="sProto"><span class="skel"></span></b><small>پروتکل</small></div>
+    <div class="stat"><b id="sCountry"><span class="skel"></span></b><small>کشور</small></div>
+    <div class="stat"><b id="sLite"><span class="skel"></span></b><small>پکیج لایت</small></div>
+  </div>
+
+  <section class="hero">
+    <div class="pill"><span class="dot"></span> به‌روزرسانی خودکار هر ~۲۵ دقیقه</div>
+    <h2>پنل آنلاین سابسکریپشن V2Ray</h2>
+    <p>کانفیگ‌های زنده از تلگرام و منابع عمومی جمع‌آوری، یکتاسازی و با GeoIP آفلاین برچسب‌گذاری می‌شوند. کانفیگ‌های مرده به‌صورت خودکار قرنطینه و حذف می‌شوند — فقط لینک مناسب دستگاهت را انتخاب کن.</p>
+  </section>
+
+  <div class="toolbar">
+    <div class="search">
+      <span>🔍</span>
+      <input id="q" type="search" placeholder="جست‌وجو: ایران، آلمان، لایت، vless…" aria-label="جست‌وجو">
     </div>
+    <button class="chip on" data-filter="all">همه</button>
+    <button class="chip" data-filter="vip">VIP</button>
+    <button class="chip" data-filter="lite">لایت</button>
+  </div>
 
-    <!-- تب‌های فیلتر اپراتور -->
-    <div class="nav-tabs" id="opTabs">
-        <button class="tab-btn active" onclick="filterOperator('all')">🌐 همه کانفیگ‌ها</button>
-        <button class="tab-btn" onclick="filterOperator('mci')">📱 همراه اول</button>
-        <button class="tab-btn" onclick="filterOperator('irancell')">🟡 ایرانسل</button>
-        <button class="tab-btn" onclick="filterOperator('wifi')">📶 مخابرات و Wi-Fi</button>
-        <button class="tab-btn" onclick="filterOperator('rightel')">🟣 رایتل</button>
-        <button class="tab-btn" onclick="filterOperator('socks')">🚨 اضطراری SOCKS5</button>
+  <div class="grid" id="cards"></div>
+
+  <section class="panel">
+    <h3>👁️ پیش‌نمایش زنده از پکیج لایت</h3>
+    <div class="pre" id="preview">در حال دریافت…</div>
+  </section>
+
+  <section class="panel">
+    <h3>🌍 سابسکریپشن بر اساس کشور <span style="color:var(--muted);font-weight:500;font-size:.75rem">(<span id="cCount">87</span> کشور)</span></h3>
+    <div class="search" style="margin-bottom:10px">
+      <span>🔎</span>
+      <input id="cq" type="search" placeholder="نام کشور را بنویس…" aria-label="جست‌وجوی کشور">
     </div>
+    <div class="cgrid" id="countries"></div>
+  </section>
 
-    <!-- پکیج‌های اصلی سابسکریپشن -->
-    <div class="section-title">📦 پکیج‌های جامع و ویژه سابسکریپشن</div>
-    <div class="card-grid" id="mainCards">
-        <!-- کل سرورها -->
-        <div class="config-card" data-tags="all mci irancell wifi rightel کل سرورها اصلی vless vmess trojan">
-            <div class="card-top">
-                <div class="card-title">🚀 پکیج اصلی (All Servers VIP)</div>
-                <div class="card-badge vip">تست‌شده &lt; 500ms</div>
-            </div>
-            <div class="card-desc">جامع‌ترین مجموعه کانفیگ‌های تست‌شده با الگوی رسمی ۵ خطی Goodbaye و بدون تکراری.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('all_servers.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('all_servers.txt', 'پکیج اصلی All VIP')">📱 بارکد QR</button>
-            </div>
-        </div>
-
-        <!-- پکیج لایت -->
-        <div class="config-card" data-tags="all mci irancell wifi rightel لایت فوق سریع گیمینگ lite">
-            <div class="card-top">
-                <div class="card-title">⚡ پکیج لایت (Ultra Fast Lite)</div>
-                <div class="card-badge">کم‌پینگ‌ترین‌ها</div>
-            </div>
-            <div class="card-desc">گلچین سبک‌ترین و سریع‌ترین سرورها برای وبگردی روان، یوتیوب و بازی آنلاین.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/lite.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('servers/lite.txt', 'پکیج لایت Ultra Fast')">📱 بارکد QR</button>
-            </div>
-        </div>
-
-        <!-- بدون کلودفلر -->
-        <div class="config-card" data-tags="all mci wifi ضد اختلال بدون کلودفلر no cloudflare">
-            <div class="card-top">
-                <div class="card-title">🛡️ پکیج بدون کلودفلر (No-CF)</div>
-                <div class="card-badge">ضد اختلال</div>
-            </div>
-            <div class="card-desc">مخصوص شرایطی که آی‌پی‌ها و CDNهای کلودفلر توسط اپراتورها دچار فیلترینگ شدید می‌شوند.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/no_cloudflare.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('servers/no_cloudflare.txt', 'پکیج بدون کلودفلر')">📱 بارکد QR</button>
-            </div>
-        </div>
-
-        <!-- پروکسی اضطراری -->
-        <div class="config-card" data-tags="all socks تلگرام پروکسی اضطراری socks5">
-            <div class="card-top">
-                <div class="card-title">🚨 پروکسی اضطراری SOCKS5</div>
-                <div class="card-badge emergency">اتصال فوری</div>
-            </div>
-            <div class="card-desc">پروتکل‌های اضطراری جهت اتصال مستقیم و آنی به پیام‌رسان تلگرام در زمان قطعی سراسری.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/emergency_socks5.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('servers/emergency_socks5.txt', 'پروکسی اضطراری SOCKS5')">📱 بارکد QR</button>
-            </div>
-        </div>
-
-        <!-- ساب VLESS -->
-        <div class="config-card" data-tags="all mci irancell wifi rightel vless reality grpc">
-            <div class="card-top">
-                <div class="card-title">🔷 سابسکریپشن VLESS</div>
-                <div class="card-badge">Reality &amp; gRPC</div>
-            </div>
-            <div class="card-desc">کانفیگ‌های مدرن و ضد فیلتر پروتکل VLESS همراه با متدهای امنیتی روز.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/vless_servers.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('servers/vless_servers.txt', 'ساب VLESS')">📱 بارکد QR</button>
-            </div>
-        </div>
-
-        <!-- ساب VMess -->
-        <div class="config-card" data-tags="all wifi irancell vmess">
-            <div class="card-top">
-                <div class="card-title">🔶 سابسکریپشن VMess</div>
-                <div class="card-badge">پایدار</div>
-            </div>
-            <div class="card-desc">کانفیگ‌های استاندارد VMess با ریمارک ۵ خطی دیکودشده بدون تداخل.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/vmess_servers.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('servers/vmess_servers.txt', 'ساب VMess')">📱 بارکد QR</button>
-            </div>
-        </div>
-
-        <!-- ساب Trojan -->
-        <div class="config-card" data-tags="all mci wifi trojan">
-            <div class="card-top">
-                <div class="card-title">🟩 سابسکریپشن Trojan</div>
-                <div class="card-badge">امنیت بالا</div>
-            </div>
-            <div class="card-desc">پروتکل قدرتمند و امن تروجان جهت دور زدن دیوارهای آتشین شبکه ملی.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/trojan_servers.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('servers/trojan_servers.txt', 'ساب Trojan')">📱 بارکد QR</button>
-            </div>
-        </div>
-
-        <!-- ساب Shadowsocks -->
-        <div class="config-card" data-tags="all irancell wifi ss shadowsocks">
-            <div class="card-top">
-                <div class="card-title">🛡️ سابسکریپشن Shadowsocks</div>
-                <div class="card-badge">سبک و سریع</div>
-            </div>
-            <div class="card-desc">سرورهای سبک و پایدار شادوساکس با مصرف بهینه باتری و اینترنت.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/ss_servers.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('servers/ss_servers.txt', 'ساب Shadowsocks')">📱 بارکد QR</button>
-            </div>
-        </div>
-
-        <!-- ساب Hysteria2 -->
-        <div class="config-card" data-tags="all mci irancell wifi rightel hysteria2 hy2 udp">
-            <div class="card-top">
-                <div class="card-title">🟪 سابسکریپشن Hysteria2</div>
-                <div class="card-badge">UDP High-Speed</div>
-            </div>
-            <div class="card-desc">پرسرعت‌ترین پروتکل مبتنی بر UDP مخصوص دور زدن اختلالات پهنای باند.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/hysteria2_servers.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('servers/hysteria2_servers.txt', 'ساب Hysteria2')">📱 بارکد QR</button>
-            </div>
-        </div>
-
-        <!-- ساب TUIC -->
-        <div class="config-card" data-tags="all mci irancell wifi rightel tuic quic">
-            <div class="card-top">
-                <div class="card-title">🌸 سابسکریپشن TUIC</div>
-                <div class="card-badge">QUIC Ultra</div>
-            </div>
-            <div class="card-desc">پروتکل مدرن با تاخیر صفر (0-RTT) جهت برقراری سریع‌ترین اتصال اولیه.</div>
-            <div class="card-actions">
-                <button class="btn btn-copy" onclick="copyLink('servers/tuic_servers.txt')">📋 کپی لینک ساب</button>
-                <button class="btn btn-qr" onclick="openQR('servers/tuic_servers.txt', 'ساب TUIC')">📱 بارکد QR</button>
-            </div>
-        </div>
+  <section class="panel">
+    <h3>📲 راهنمای اتصال</h3>
+    <div class="steps">
+      <div class="step"><div class="n">۱</div><p>لینک سابسکریپشن پکیج مورد نظر را با دکمهٔ <b>کپی</b> بردار.</p></div>
+      <div class="step"><div class="n">۲</div><p>در اپلیکیشن، گزینهٔ <b>Import config from URL / افزودن سابسکریپشن</b> را بزن و لینک را پیست کن.</p></div>
+      <div class="step"><div class="n">۳</div><p>یک بار <b>Update subscription</b> بزن تا سرورها دانلود شوند، بعد نزدیک‌ترین سرور را انتخاب کن.</p></div>
+      <div class="step"><div class="n">۴</div><p>اگر سروری وصل نشد، همان کانفیگ در اجرای بعدی خودکار حذف می‌شود؛ پکیج را دوباره Update کن.</p></div>
     </div>
-
-    <!-- بخش تفکیک کشورها -->
-    <div class="section-title">🌍 سابسکریپشن‌های تفکیک‌شده بر اساس کشورها</div>
-    <div class="countries-grid" id="countryCards">
-        <div class="country-card" data-tags="آلمان germany de">
-            <div class="c-info"><span>🇩🇪</span><span>آلمان</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/germany.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/germany.txt', 'کانفیگ‌های آلمان')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="فنلاند finland fi">
-            <div class="c-info"><span>🇫🇮</span><span>فنلاند</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/finland.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/finland.txt', 'کانفیگ‌های فنلاند')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="آمریکا united states us usa">
-            <div class="c-info"><span>🇺🇸</span><span>آمریکا</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/united_states.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/united_states.txt', 'کانفیگ‌های آمریکا')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="هلند netherlands nl">
-            <div class="c-info"><span>🇳🇱</span><span>هلند</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/netherlands.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/netherlands.txt', 'کانفیگ‌های هلند')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="ترکیه turkey tr">
-            <div class="c-info"><span>🇹🇷</span><span>ترکیه</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/turkey.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/turkey.txt', 'کانفیگ‌های ترکیه')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="انگلیس united kingdom gb uk">
-            <div class="c-info"><span>🇬🇧</span><span>انگلیس</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/united_kingdom.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/united_kingdom.txt', 'کانفیگ‌های انگلیس')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="فرانسه france fr">
-            <div class="c-info"><span>🇫🇷</span><span>فرانسه</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/france.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/france.txt', 'کانفیگ‌های فرانسه')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="ژاپن japan jp">
-            <div class="c-info"><span>🇯🇵</span><span>ژاپن</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/japan.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/japan.txt', 'کانفیگ‌های ژاپن')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="سوئد sweden se">
-            <div class="c-info"><span>🇸🇪</span><span>سوئد</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/sweden.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/sweden.txt', 'کانفیگ‌های سوئد')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="سنگاپور singapore sg">
-            <div class="c-info"><span>🇸🇬</span><span>سنگاپور</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/singapore.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/singapore.txt', 'کانفیگ‌های سنگاپور')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="مالزی malaysia my">
-            <div class="c-info"><span>🇲🇾</span><span>مالزی</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/malaysia.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/malaysia.txt', 'کانفیگ‌های مالزی')">QR</button>
-            </div>
-        </div>
-        <div class="country-card" data-tags="روسیه russia ru">
-            <div class="c-info"><span>🇷🇺</span><span>روسیه</span></div>
-            <div class="c-btns">
-                <button class="mini-btn" onclick="copyLink('servers/countries/russia.txt')">کپی</button>
-                <button class="mini-btn" onclick="openQR('servers/countries/russia.txt', 'کانفیگ‌های روسیه')">QR</button>
-            </div>
-        </div>
+    <div class="apps" id="apps">
+      <button class="app" data-app="v2rayng">v2rayNG</button>
+      <button class="app" data-app="nekobox">NekoBox</button>
+      <button class="app" data-app="streisand">Streisand</button>
+      <button class="app" data-app="clash">Clash</button>
+      <button class="app" data-app="singbox">Sing-box</button>
     </div>
+  </section>
 
-    <!-- دکمه‌های رسمی تلگرام (اصل دوم منشور) -->
-    <div class="official-channels">
-        <a href="https://t.me/Goodbaye_filtering" target="_blank" class="tg-link tg-main">
-            📢 کانال اصلی Goodbaye Filtering
-        </a>
-        <a href="https://t.me/CONFIG_V2RAY_VIP" target="_blank" class="tg-link tg-vip">
-            ⚡ کانال و گروه گفتگوی VIP
-        </a>
-    </div>
+  <footer>
+    ساخته‌شده برای دسترسی آزاد • @Goodbaye_filtering<br>
+    داده‌ها از این مخزن به‌صورت زنده خوانده می‌شوند.
+  </footer>
 </div>
 
-<!-- Modal بارکد QR پویا -->
-<div class="modal" id="qrModal" onclick="closeQR(event)">
-    <div class="modal-card" onclick="event.stopPropagation()">
-        <h3 id="modalTitle" style="font-size: 1.05rem; font-weight: 800; color: #f8fafc;">بارکد QR</h3>
-        <p style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">اسکن با دوربین نرم‌افزارهای v2rayNG یا Hiddify</p>
-        <img id="qrImage" src="" alt="Dynamic QR">
-        <button class="btn-close" onclick="document.getElementById('qrModal').style.display='none'">بستن پنجره</button>
-    </div>
+<div class="toast" id="toast">لینک کپی شد ✅</div>
+<div class="modal" id="modal">
+  <div class="modal-in">
+    <h4 id="mTitle">اسکن کن</h4>
+    <img id="mImg" alt="QR" src="">
+    <div class="url" id="mUrl"></div>
+    <button class="btn primary" id="mClose">بستن</button>
+  </div>
 </div>
-
-<!-- پیام تایید کپی -->
-<div class="toast" id="toast">لینک سابسکریپشن با موفقیت کپی شد!</div>
 
 <script>
-    const BASE_URL = "https://alireza786786.github.io/Free-V2ray-Configs/";
+var BASE = "https://alireza786786.github.io/Free-V2ray-Configs/";
+var RAW  = "https://raw.githubusercontent.com/alireza786786/Free-V2ray-Configs/main/";
+var API  = "https://api.github.com/repos/alireza786786/Free-V2ray-Configs/";
 
-    function copyLink(path) {
-        const fullUrl = BASE_URL + path;
-        navigator.clipboard.writeText(fullUrl).then(() => {
-            const toast = document.getElementById("toast");
-            toast.style.display = "block";
-            setTimeout(() => { toast.style.display = "none"; }, 2500);
+var PACKAGES = [
+  {id:"all", file:"all_servers.txt", icon:"🚀", title:"پکیج اصلی (All Servers VIP)",
+   tag:"تست‌شده", tagClass:"a", cls:"vip", filters:["vip"],
+   desc:"جامع‌ترین مجموعهٔ کانفیگ‌های یکتاشده با ریمارک ۵ خطی و برچسب کشور و اپراتور."},
+  {id:"lite", file:"servers/lite.txt", icon:"⚡", title:"پکیج لایت (Ultra Fast Lite)",
+   tag:"کم‌حجم", tagClass:"g", cls:"lite", filters:["lite"],
+   desc:"گلچینی سبک از هر کشور برای وب‌گردی روان و اتصال سریع؛ مناسب موبایل و ترافیک کم."},
+  {id:"nocf", file:"servers/no_cloudflare.txt", icon:"🛡️", title:"بدون کلودفلر (No-CF)",
+   tag:"ضد اختلال", tagClass:"", cls:"nocf", filters:["vip"],
+   desc:"کانفیگ‌هایی که روی CDN کلودفلر نیستند؛ برای زمانی که اپراتور IPهای کلودفلر را مختل می‌کند."},
+  {id:"socks", file:"servers/emergency_socks5.txt", icon:"🚨", title:"پروکسی اضطراری SOCKS5",
+   tag:"اتصال فوری", tagClass:"r", cls:"sos", filters:["lite"],
+   desc:"پروتکل سادهٔ SOCKS5 برای اتصال مستقیم و سریع به تلگرام و مرورگر بدون کلاینت سنگین."},
+  {id:"vless", file:"servers/vless_servers.txt", icon:"🔷", title:"سابسکریپشن VLESS",
+   tag:"Reality & gRPC", tagClass:"", cls:"", filters:["vip"],
+   desc:"پروتکل مدرن و مقاوم به فیلترینگ با متدهای امنیتی Reality، Vision و gRPC."},
+  {id:"vmess", file:"servers/vmess_servers.txt", icon:"🔶", title:"سابسکریپشن VMess",
+   tag:"پایدار", tagClass:"", cls:"", filters:["vip"],
+   desc:"کانفیگ‌های استاندارد VMess با سازگاری بالا در همهٔ کلاینت‌ها."},
+  {id:"trojan", file:"servers/trojan_servers.txt", icon:"🟩", title:"سابسکریپشن Trojan",
+   tag:"امنیت بالا", tagClass:"g", cls:"", filters:["vip"],
+   desc:"پروتکل تروجان با ظاهر ترافیک HTTPS برای عبور از فیلترهای سخت‌گیرانه."},
+  {id:"ss", file:"servers/ss_servers.txt", icon:"🟪", title:"سابسکریپشن Shadowsocks",
+   tag:"سبک", tagClass:"", cls:"", filters:["lite"],
+   desc:"شادوساکس با سربار کم و سرعت بالا؛ مناسب شبکه‌های ضعیف."},
+  {id:"hy2", file:"servers/hysteria2_servers.txt", icon:"💨", title:"سابسکریپشن Hysteria2",
+   tag:"UDP پرسرعت", tagClass:"g", cls:"", filters:["vip"],
+   desc:"بر پایهٔ QUIC/UDP؛ در شبکه‌های پرافت‌وخیز و پینگ بالا عملکرد بهتری دارد."},
+  {id:"tuic", file:"servers/tuic_servers.txt", icon:"🌊", title:"سابسکریپشن TUIC",
+   tag:"QUIC", tagClass:"", cls:"", filters:["vip"],
+   desc:"پروتکل QUIC کم‌تأخیر برای اتصال پایدار در شرایط نوسانی."},
+  {id:"socks5", file:"servers/socks5_servers.txt", icon:"🧦", title:"سابسکریپشن SOCKS5",
+   tag:"مستقیم", tagClass:"", cls:"", filters:["lite"],
+   desc:"مجموعهٔ کامل پروکسی‌های SOCKS5 برای ابزارهای غیر V2Ray."},
+  {id:"ssr", file:"servers/ssr_servers.txt", icon:"🕰️", title:"سابسکریپشن SSR",
+   tag:"کلاسیک", tagClass:"", cls:"", filters:["lite"],
+   desc:"کانفیگ‌های ShadowsocksR برای کلاینت‌های قدیمی‌تر."}
+];
+
+var COUNTRIES = ["afghanistan","albania","algeria","argentina","armenia","australia","austria","azerbaijan","bahrain","bangladesh","belarus","belgium","brazil","british_virgin_islands","bulgaria","canada","chile","china","colombia","costa_rica","cyprus","czech_republic","denmark","dominican_republic","ecuador","estonia","finland","france","georgia","germany","hong_kong","hungary","iceland","india","indonesia","iran","iraq","ireland","israel","italy","japan","kazakhstan","kenya","latvia","lithuania","luxembourg","malaysia","mexico","moldova","mongolia","montenegro","morocco","myanmar","nepal","netherlands","new_zealand","nigeria","norway","oman","pakistan","panama","peru","philippines","poland","portugal","qatar","romania","russia","saudi_arabia","serbia","singapore","slovakia","south_africa","south_korea","spain","sweden","switzerland","taiwan","thailand","timor_leste","turkey","ukraine","united_arab_emirates","united_kingdom","united_states","uzbekistan","vietnam"];
+
+var NAME_FA = {iran:"ایران",germany:"آلمان",netherlands:"هلند",france:"فرانسه",turkey:"ترکیه",russia:"روسیه",
+ united_states:"آمریکا",united_kingdom:"انگلیس",canada:"کانادا",japan:"ژاپن",china:"چین",india:"هند",
+ singapore:"سنگاپور",sweden:"سوئد",finland:"فنلاند",poland:"لهستان",ukraine:"اوکراین",romania:"رومانی",
+ spain:"اسپانیا",italy:"ایتالیا",austria:"اتریش",switzerland:"سوئیس",belgium:"بلژیک",denmark:"دانمارک",
+ norway:"نروژ",ireland:"ایرلند",portugal:"پرتغال",greece:"یونان",bulgaria:"بلغارستان",hungary:"مجارستان",
+ czech_republic:"چک",slovakia:"اسلواکی",slovenia:"اسلوونی",croatia:"کرواسی",serbia:"صربستان",
+ lithuania:"لیتوانی",latvia:"لتونی",estonia:"استونی",moldova:"مولداوی",belarus:"بلاروس",georgia:"گرجستان",
+ armenia:"ارمنستان",azerbaijan:"آذربایجان",kazakhstan:"قزاقستان",uzbekistan:"ازبکستان",mongolia:"مغولستان",
+ australia:"استرالیا",new_zealand:"نیوزیلند",brazil:"برزیل",argentina:"آرژانتین",chile:"شیلی",peru:"پرو",
+ colombia:"کلمبیا",ecuador:"اکوادور",mexico:"مکزیک",panama:"پاناما",costa_rica:"کاستاریکا",
+ dominican_republic:"دومینیکن",british_virgin_islands:"جزایر ویرجین",south_africa:"آفریقای جنوبی",
+ nigeria:"نیجریه",kenya:"کنیا",morocco:"مراکش",algeria:"الجزایر",qatar:"قطر",oman:"عمان",
+ saudi_arabia:"عربستان",united_arab_emirates:"امارات",bahrain:"بحرین",iraq:"عراق",israel:"اسرائیل",
+ cyprus:"قبرس",iceland:"ایسلند",luxembourg:"لوکزامبورگ",
+ hong_kong:"هنگ‌کنگ",south_korea:"کره جنوبی",taiwan:"تایوان",thailand:"تایلند",vietnam:"ویتنام",
+ malaysia:"مالزی",indonesia:"اندونزی",philippines:"فیلیپین",myanmar:"میانمار",
+ nepal:"نپال",bangladesh:"بنگلادش",pakistan:"پاکستان",afghanistan:"افغانستان",
+ montenegro:"مونته‌نگرو",albania:"آلبانی",timor_leste:"تیمور شرقی"};
+
+var FLAG = {iran:"🇮🇷",germany:"🇩🇪",netherlands:"🇳🇱",france:"🇫🇷",turkey:"🇹🇷",russia:"🇷🇺",united_states:"🇺🇸",
+ united_kingdom:"🇬🇧",canada:"🇨🇦",japan:"🇯🇵",china:"🇨🇳",india:"🇮🇳",singapore:"🇸🇬",sweden:"🇸🇪",finland:"🇫🇮",
+ poland:"🇵🇱",ukraine:"🇺🇦",romania:"🇷🇴",spain:"🇪🇸",italy:"🇮🇹",austria:"🇦🇹",switzerland:"🇨🇭",belgium:"🇧🇪",
+ denmark:"🇩🇰",norway:"🇳🇴",ireland:"🇮🇪",portugal:"🇵🇹",greece:"🇬🇷",bulgaria:"🇧🇬",hungary:"🇭🇺",czech_republic:"🇨🇿",
+ slovakia:"🇸🇰",slovenia:"🇸🇮",croatia:"🇭🇷",serbia:"🇷🇸",lithuania:"🇱🇹",latvia:"🇱🇻",estonia:"🇪🇪",moldova:"🇲🇩",
+ belarus:"🇧🇾",georgia:"🇬🇪",armenia:"🇦🇲",azerbaijan:"🇦🇿",kazakhstan:"🇰🇿",uzbekistan:"🇺🇿",mongolia:"🇲🇳",
+ australia:"🇦🇺",new_zealand:"🇳🇿",brazil:"🇧🇷",argentina:"🇦🇷",chile:"🇨🇱",peru:"🇵🇪",colombia:"🇨🇴",ecuador:"🇪🇨",
+ mexico:"🇲🇽",panama:"🇵🇦",costa_rica:"🇨🇷",dominican_republic:"🇩🇴",british_virgin_islands:"🇻🇬",
+ south_africa:"🇿🇦",nigeria:"🇳🇬",kenya:"🇰🇪",morocco:"🇲🇦",algeria:"🇩🇿",qatar:"🇶🇦",oman:"🇴🇲",saudi_arabia:"🇸🇦",
+ united_arab_emirates:"🇦🇪",bahrain:"🇧🇭",iraq:"🇮🇶",israel:"🇮🇱",cyprus:"🇨🇾",iceland:"🇮🇸",luxembourg:"🇱🇺",
+ hong_kong:"🇭🇰",south_korea:"🇰🇷",taiwan:"🇹🇼",thailand:"🇹🇭",vietnam:"🇻🇳",malaysia:"🇲🇾",indonesia:"🇮🇩",
+ philippines:"🇵🇭",myanmar:"🇲🇲",nepal:"🇳🇵",bangladesh:"🇧🇩",pakistan:"🇵🇰",afghanistan:"🇦🇫",
+ montenegro:"🇲🇪",albania:"🇦🇱",timor_leste:"🇹🇱"};
+
+var SIZES = {};
+var AVG = 430;
+
+function el(id){return document.getElementById(id)}
+function fmt(n){return n>=1000?Math.round(n/100)/10+"K":String(n)}
+
+function toast(msg){
+  var t = el("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._t); t._t = setTimeout(function(){t.classList.remove("show")}, 2200);
+}
+
+function copyText(text, okMsg){
+  function done(){ toast(okMsg || "لینک کپی شد ✅"); }
+  if (navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(text).then(done).catch(function(){ fallback(); });
+  } else { fallback(); }
+  function fallback(){
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); done(); }catch(e){ toast("کپی نشد، دستی انتخاب کن"); }
+    document.body.removeChild(ta);
+  }
+}
+
+function cardHTML(p){
+  var size = SIZES[p.file];
+  var count = size ? Math.round(size / AVG) : null;
+  return '<article class="card '+p.cls+'" data-filters="'+p.filters.join(",")+'" data-name="'+
+    (p.title+" "+(NAME_FA[p.id]||p.id)).toLowerCase()+'">'+
+    '<div class="c-top"><div class="c-title">'+p.icon+' '+p.title+'</div>'+
+    '<span class="tag '+p.tagClass+'">'+p.tag+'</span></div>'+
+    '<div class="c-desc">'+p.desc+'</div>'+
+    '<div class="meta">'+
+      '<span>تعداد: <b>'+(count?("≈ "+count.toLocaleString("fa-IR")):"—")+'</b></span>'+
+      (size?'<span>حجم: <b>'+(size/1048576).toFixed(1)+' MB</b></span>':'')+
+    '</div>'+
+    '<div class="actions">'+
+      '<button class="btn primary" data-copy="'+p.file+'">کپی لینک</button>'+
+      '<button class="btn ghost" data-qr="'+p.file+'" data-title="'+p.title.replace(/"/g,"")+'" title="QR">▣</button>'+
+      '<a class="btn ghost" href="'+BASE+p.file+'" target="_blank" rel="noopener" title="باز کردن">↗</a>'+
+    '</div></article>';
+}
+
+function renderCards(){
+  el("cards").innerHTML = PACKAGES.map(cardHTML).join("");
+}
+
+function applyFilter(f, q){
+  var cards = document.querySelectorAll("#cards .card");
+  cards.forEach(function(c){
+    var okF = (f==="all") || (c.dataset.filters||"").split(",").indexOf(f)>-1;
+    var okQ = !q || (c.dataset.name||"").indexOf(q)>-1;
+    c.style.display = (okF && okQ) ? "" : "none";
+  });
+}
+
+function renderCountries(){
+  el("countries").innerHTML = COUNTRIES.map(function(s){
+    return '<button class="cbtn" data-country="'+s+'"><span class="fl">'+(FLAG[s]||"🌐")+'</span>'+
+      '<span>'+(NAME_FA[s]||s)+'</span></button>';
+  }).join("");
+  el("cCount").textContent = COUNTRIES.length;
+}
+
+function filterCountries(q){
+  document.querySelectorAll("#countries .cbtn").forEach(function(b){
+    var s = b.dataset.country;
+    var hay = (s+" "+(NAME_FA[s]||"")).toLowerCase();
+    b.style.display = (!q || hay.indexOf(q)>-1) ? "" : "none";
+  });
+}
+
+function loadSizes(){
+  return fetch(API+"git/trees/main?recursive=1", {cache:"no-store"})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(d){
+      (d.tree||[]).forEach(function(t){ if(t.type==="blob") SIZES[t.path]=t.size; });
+      return SIZES;
+    })
+    .catch(function(){ return {}; });
+}
+
+function loadLite(){
+  return fetch(RAW+"servers/lite.txt", {cache:"no-store"})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.text(); })
+    .then(function(txt){
+      var lines = txt.split("\n").filter(function(l){ return l.indexOf("://")>-1; });
+      if (lines.length){
+        AVG = Math.max(150, Math.round(txt.length / lines.length));
+        el("sLite").textContent = lines.length.toLocaleString("fa-IR");
+        var sample = lines.slice(0, 8).map(function(l, i){
+          var uri = l.split("#")[0];
+          var remark = l.split("#")[1] || "";
+          var country = "";
+          try{
+            var m = decodeURIComponent(remark).match(/📡([^\n]*)/);
+            if (m) country = m[1].trim();
+          }catch(e){}
+          return (i+1)+". "+(country||"—")+"  "+uri.slice(0, 92)+(uri.length>92?"…":"");
         });
+        el("preview").textContent = sample.join("\n");
+      } else {
+        el("preview").textContent = "پکیج لایت هنوز خالی است.";
+      }
+      return lines.length;
+    })
+    .catch(function(){
+      el("preview").textContent = "دریافت پیش‌نمایش ممکن نشد (اتصال یا CORS).";
+      el("sLite").textContent = "—";
+      return 0;
+    });
+}
+
+function loadMeta(){
+  fetch(API+"commits?per_page=1", {cache:"no-store"})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(c){
+      var d = new Date(c[0].commit.committer.date);
+      el("updated").textContent = "آخرین به‌روزرسانی: " + ago(d);
+    })
+    .catch(function(){ el("updated").textContent = "به‌روزرسانی خودکار هر ~۲۵ دقیقه"; });
+}
+
+function ago(d){
+  var s = Math.max(0, Math.floor((Date.now()-d.getTime())/1000));
+  if (s<60) return "چند لحظه پیش";
+  if (s<3600) return Math.floor(s/60)+" دقیقه پیش";
+  if (s<86400) return Math.floor(s/3600)+" ساعت پیش";
+  return Math.floor(s/86400)+" روز پیش";
+}
+
+function fillStats(){
+  var sz = SIZES["all_servers.txt"];
+  el("sAll").textContent = sz ? ("≈ "+Math.round(sz/AVG).toLocaleString("fa-IR")) : "—";
+  el("sProto").textContent = PACKAGES.filter(function(p){
+    return p.file.indexOf("servers/")===0 && p.file.indexOf("_servers")>-1;
+  }).filter(function(p){ return (SIZES[p.file]||0) > 0; }).length.toLocaleString("fa-IR");
+  el("sCountry").textContent = COUNTRIES.length.toLocaleString("fa-IR");
+}
+
+function initTheme(){
+  var saved = null;
+  try{ saved = localStorage.getItem("gb-theme"); }catch(e){}
+  var dark = saved ? saved==="dark" : true;
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  el("themeBtn").textContent = dark ? "🌙" : "☀️";
+  el("themeBtn").addEventListener("click", function(){
+    var isDark = document.documentElement.getAttribute("data-theme")==="dark";
+    var next = isDark ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    el("themeBtn").textContent = next==="dark" ? "🌙" : "☀️";
+    try{ localStorage.setItem("gb-theme", next); }catch(e){}
+  });
+}
+
+function initEvents(){
+  var curFilter = "all";
+
+  document.querySelectorAll("[data-filter]").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll("[data-filter]").forEach(function(x){ x.classList.remove("on"); });
+      b.classList.add("on");
+      curFilter = b.dataset.filter;
+      applyFilter(curFilter, el("q").value.trim().toLowerCase());
+    });
+  });
+
+  el("q").addEventListener("input", function(){
+    applyFilter(curFilter, this.value.trim().toLowerCase());
+  });
+
+  el("cq").addEventListener("input", function(){
+    filterCountries(this.value.trim().toLowerCase());
+  });
+
+  document.addEventListener("click", function(e){
+    var copyBtn = e.target.closest("[data-copy]");
+    if (copyBtn){ copyText(BASE + copyBtn.dataset.copy); return; }
+
+    var qrBtn = e.target.closest("[data-qr]");
+    if (qrBtn){
+      var url = BASE + qrBtn.dataset.qr;
+      el("mTitle").textContent = qrBtn.dataset.title || "اسکن کن";
+      el("mUrl").textContent = url;
+      el("mImg").src = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=8&data="+encodeURIComponent(url);
+      el("modal").classList.add("show");
+      return;
     }
 
-    function openQR(path, title) {
-        const fullUrl = BASE_URL + path;
-        document.getElementById("modalTitle").innerText = title;
-        document.getElementById("qrImage").src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(fullUrl)}`;
-        document.getElementById("qrModal").style.display = "flex";
+    var cBtn = e.target.closest("[data-country]");
+    if (cBtn){
+      var url2 = BASE + "servers/countries/" + cBtn.dataset.country + ".txt";
+      copyText(url2, "لینک کشور کپی شد ✅");
+      return;
     }
 
-    function closeQR(e) {
-        document.getElementById("qrModal").style.display = "none";
+    var app = e.target.closest("[data-app]");
+    if (app){
+      var f = BASE + "servers/lite.txt";
+      var map = {
+        v2rayng: "v2rayng://install-sub?url=",
+        streisand: "streisand://import/",
+        clash: "clash://install-config?url=",
+        singbox: "sing-box://import-remote-profile?url=",
+        nekobox: "sn://subscription?url="
+      };
+      var scheme = map[app.dataset.app];
+      if (scheme){ window.location.href = scheme + encodeURIComponent(f); }
+      else { copyText(f, "لینک لایت کپی شد ✅"); }
     }
+  });
 
-    function filterOperator(op) {
-        const btns = document.querySelectorAll("#opTabs .tab-btn");
-        btns.forEach(b => b.classList.remove("active"));
-        event.target.classList.add("active");
+  el("mClose").addEventListener("click", function(){ el("modal").classList.remove("show"); });
+  el("modal").addEventListener("click", function(e){
+    if (e.target === this) this.classList.remove("show");
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape") el("modal").classList.remove("show");
+    if (e.key === "/" && document.activeElement !== el("q")){ e.preventDefault(); el("q").focus(); }
+  });
+}
 
-        const cards = document.querySelectorAll("#mainCards .config-card");
-        cards.forEach(card => {
-            const tags = card.getAttribute("data-tags") || "";
-            if (op === 'all' || tags.includes(op)) {
-                card.style.display = "block";
-            } else {
-                card.style.display = "none";
-            }
-        });
-    }
+renderCountries();
+renderCards();
+initTheme();
+initEvents();
 
-    function liveSearch() {
-        const query = document.getElementById("searchInput").value.toLowerCase().trim();
-        const mainCards = document.querySelectorAll("#mainCards .config-card");
-        const countryCards = document.querySelectorAll("#countryCards .country-card");
+loadSizes().then(function(){
+  renderCards();
+  fillStats();
+  loadLite();
+});
 
-        mainCards.forEach(card => {
-            const text = (card.innerText + " " + card.getAttribute("data-tags")).toLowerCase();
-            card.style.display = text.includes(query) ? "block" : "none";
-        });
-
-        countryCards.forEach(card => {
-            const text = (card.innerText + " " + card.getAttribute("data-tags")).toLowerCase();
-            card.style.display = text.includes(query) ? "flex" : "none";
-        });
-    }
+loadMeta();
 </script>
-
 </body>
 </html>
