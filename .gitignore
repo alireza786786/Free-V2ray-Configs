@@ -13,6 +13,8 @@ collector.log
 
 # Pipeline state - regenerated on every run, must never be committed
 data/tested_servers.json
+data/*.mmdb
+data/*.tmp
 collector_cache.json
 *.cache
 
