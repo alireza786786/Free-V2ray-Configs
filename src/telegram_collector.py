@@ -1,235 +1,188 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-src/telegram_collector.py — موتور شکارچی کانفیگ تلگرام مجهز به سیستم نگهبان خودکار حجم دیتابیس (Auto-Pruner).
-پروژه: Goodbaye Universal Standard | ai-driven-v2ray
-مالک: alireza786786 | کانال رسمی: @Goodbaye_filtering
+# ==============================================================================
+# Goodbaye Universal Standard - Telegram Channel Config Collector (No-API)
+# Repository: https://github.com/alireza786786/Free-V2ray-Configs
+# ==============================================================================
 
-ویژگی‌ها و تضمین‌های سبک‌سازی دائمی:
-  • گارد کرانمند (Bounded Schema): ذخیره منحصراً آخرین شناسه عددی (ID) به جای انباشت لاگ‌ها و متون
-  • زباله‌روبی آنی (Dead Channel GC): حذف خودکار دیتای کانال‌هایی که از لیست کانال‌ها پاک شده‌اند
-  • سقف سخت‌گیرانه ۲۰۰ کیلوبایت: جلوگیری قطعی از حجیم شدن فایل و مهار دائمی خطای ۲۵ مگابایتی گیت‌هاب
-  • واکشی هم‌روند وب عمومی تلگرام (t.me/s/...) بدون نیاز به لاگین یا نشست‌های ناپایدار
-  • ادغام هوشمند استخر خام با all_servers.txt جهت ارسال به آبشار تست
-"""
-
-from __future__ import annotations
-
-import html
-import json
-import logging
-import os
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
 import requests
+import re
+import sqlite3
+import time
+import logging
+import json
+from pathlib import Path
+from datetime import datetime, timezone
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-try:
-    import core
-except ImportError:
-    core = None
+# ----- تنظیمات -----
+CHANNELS_FILE = "data/channels.txt"       # فایل ورودی کانال‌ها
+DB_FILE = "collector.db"                  # پایگاه‌داده مشترک
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+SLEEP_BETWEEN_CHANNELS = 1.2             # تاخیر استاندارد بین واکشی‌ها
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("telegram_collector")
-
-CHANNELS_CLEANED_FILE = Path("data/channels_cleaned.txt")
-CHANNELS_FALLBACK_FILE = Path("data/channels.txt")
-CHECKPOINT_FILE = Path("data/last_message_id.json")
-LEGACY_CHECKPOINT_FILE = Path("data/checkpoint.json")
-OUTPUT_TELEGRAM_CONFIGS = Path("data/telegram_configs.txt")
-RAW_ALL_SERVERS = Path("all_servers.txt")
-
-# سقف سخت‌گیرانه حجم فایل‌های وضعیت (حداکثر ۲۰۰ کیلوبایت؛ معمولاً کمتر از ۲۰ کیلوبایت خواهد بود)
-MAX_CHECKPOINT_BYTES = 200 * 1024
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0",
-]
-
-FETCH_TIMEOUT = 12
-MAX_CONCURRENT_CHANNELS = 20
-
-CONFIG_REGEX = re.compile(
-    r"(?:vless|vmess|trojan|ss|ssr|hy2|hysteria2|tuic|socks5|wireguard)://[^\s<>\"'`]+",
-    re.IGNORECASE,
+# ----- الگوی استخراج جامع پروتکل‌ها -----
+V2RAY_PATTERN = re.compile(
+    r'(?:vless|vmess|trojan|ss|ssr|hysteria|hysteria2|tuic|juicity|socks[45]?)://[^\s`\'"<>]+',
+    flags=re.IGNORECASE
 )
 
-
-def load_channel_list() -> List[str]:
-    """خواندن لیست کانال‌های تمیزشده با اولویت channels_cleaned.txt."""
-    target_file = CHANNELS_CLEANED_FILE if CHANNELS_CLEANED_FILE.exists() else CHANNELS_FALLBACK_FILE
-    if not target_file.exists():
-        logger.warning(f"⚠️ فایل لیست کانال‌ها در {target_file} یافت نشد.")
+def load_channels(filepath: str) -> list[str]:
+    """بارگذاری لیست کانال‌ها از فایل."""
+    path = Path(filepath)
+    if not path.exists():
+        logger.error(f"فایل '{filepath}' پیدا نشد.")
         return []
-
-    channels = []
-    with open(target_file, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            clean = line.strip()
-            if not clean or clean.startswith("#"):
-                continue
-            clean = clean.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "")
-            clean = clean.split("/")[0].strip()
-            if clean and clean not in channels:
-                channels.append(clean)
-
-    logger.info(f"📋 تعداد {len(channels)} کانال تلگرام برای واکشی آماده شد.")
+    with open(path, 'r', encoding='utf-8') as f:
+        channels = [line.strip().lstrip('@') for line in f if line.strip() and not line.startswith('#')]
+    logger.info(f"تعداد {len(channels)} کانال از '{filepath}' بارگذاری شد.")
     return channels
 
-
-def load_checkpoints() -> Dict[str, int]:
-    """بارگذاری آخرین شناسه پیام بررسی‌شده هر کانال با بررسی سلامت حجم."""
-    target_path = CHECKPOINT_FILE if CHECKPOINT_FILE.exists() else LEGACY_CHECKPOINT_FILE
-    if target_path.exists():
-        try:
-            # گارد ایمنی: اگر فایل قبلی به دلیل باگ‌های گذشته بالاتر از سقف بود، ریست به {} جهت نجات مخزن
-            if target_path.stat().st_size > MAX_CHECKPOINT_BYTES:
-                logger.warning(f"🚨 هشدار حجم: فایل {target_path} بیش از حد بزرگ بود؛ ریست خودکار به ساختار سبک.")
-                return {}
-
-            with open(target_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    # پاک‌سازی ساختار: فقط کلید و مقدار عددی پذیرفته می‌شود
-                    return {str(k): int(v) for k, v in data.items() if str(v).isdigit()}
-        except Exception:
-            return {}
-    return {}
-
-
-def save_checkpoints(checkpoints: Dict[str, int], active_channels: Optional[Set[str]] = None) -> None:
-    """
-    ذخیره اتمیک، سبک و هرس‌شده وضعیت کانال‌ها:
-      ۱) زباله‌روبی کانال‌های حذف‌شده (Dead Channel GC)
-      ۲) تضمین ذخیره صرفاً یک عدد صحیح به ازای هر کانال (کمتر از ۱۵ کیلوبایت)
-      ۳) ذخیره هم‌زمان در last_message_id.json و checkpoint.json جهت سازگاری کامل
-    """
-    # فیلتر کانال‌های مرده: تنها کانال‌های زنده فعلی در دیتابیس می‌مانند
-    clean_db: Dict[str, int] = {}
-    for ch, msg_id in checkpoints.items():
-        if active_channels and ch not in active_channels:
-            continue  # حذف زباله‌های قدیمی
-        try:
-            clean_db[str(ch)] = int(msg_id)
-        except (ValueError, TypeError):
-            continue
-
-    # ذخیره کامپکت و اتمیک
-    for target_file in (CHECKPOINT_FILE, LEGACY_CHECKPOINT_FILE):
-        target_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = target_file.with_suffix(".tmp")
-        try:
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(clean_db, f, separators=(",", ":"), ensure_ascii=False)
-            tmp_path.replace(target_file)
-        except Exception as e:
-            logger.error(f"خطا در نگارش {target_file}: {e}")
-            if tmp_path.exists():
-                tmp_path.unlink(missing_ok=True)
-
-
-def scrape_channel(channel: str, last_id: int) -> Tuple[str, List[str], int]:
-    """استخراج پیام‌ها و کانفیگ‌های یک کانال تلگرام از طریق پابلیک وب t.me/s/..."""
+def fetch_page(channel: str) -> str:
+    """دریافت محتوای وب‌پیش‌نمایش کانال t.me/s."""
     url = f"https://t.me/s/{channel}"
-    headers = {"User-Agent": USER_AGENTS[hash(channel) % len(USER_AGENTS)]}
-
     try:
-        resp = requests.get(url, headers=headers, timeout=FETCH_TIMEOUT)
-        if resp.status_code != 200:
-            return channel, [], last_id
-
-        page_content = resp.text
-        msg_ids = [int(m) for m in re.findall(rf'data-post="{re.escape(channel)}/(\d+)"', page_content)]
-        new_max_id = max(msg_ids) if msg_ids else last_id
-
-        clean_text = html.unescape(page_content)
-        extracted: List[str] = []
-
-        for match in CONFIG_REGEX.findall(clean_text):
-            cfg = match.strip().rstrip(".,;)>]}")
-            if core and hasattr(core, "is_proxy_config"):
-                if core.is_proxy_config(cfg):
-                    extracted.append(cfg)
-            else:
-                if len(cfg) > 15:
-                    extracted.append(cfg)
-
-        return channel, extracted, new_max_id
+        resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+        resp.raise_for_status()
+        return resp.text
     except Exception as e:
-        logger.debug(f"عدم پاسخ‌دهی کانال {channel}: {e}")
-        return channel, [], last_id
+        logger.warning(f"خطا در واکشی {channel}: {e}")
+        return ""
 
+def extract_configs(html: str) -> set[str]:
+    """استخراج کلیه لینک‌های معتبر از محتوای HTML."""
+    return set(V2RAY_PATTERN.findall(html))
+
+def save_to_db(configs: set[str]):
+    """ذخیره امن کانفیگ‌های یکتا در SQLite."""
+    conn = sqlite3.connect(DB_FILE)
+    try:
+        with conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO configs (config) VALUES (?)",
+                [(c,) for c in configs]
+            )
+        logger.info(f"{len(configs)} کانفیگ جدید به دیتابیس اضافه شد.")
+    except Exception as e:
+        logger.error(f"خطا در ذخیره‌سازی دیتابیس: {e}")
+    finally:
+        conn.close()
 
 def main():
-    channels = load_channel_list()
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("CREATE TABLE IF NOT EXISTS configs (config TEXT PRIMARY KEY)")
+    conn.close()
+
+    logger.info("🚀 شروع جمع‌آوری کانفیگ‌ها از تلگرام...")
+    channels = load_channels(CHANNELS_FILE)
     if not channels:
-        logger.info("هیچ کانالی برای بررسی وجود ندارد.")
         return
 
-    active_channel_set = set(channels)
-    checkpoints = load_checkpoints()
-    all_extracted_configs: Set[str] = set()
-    updated_checkpoints = dict(checkpoints)
+    last_ids_file = "data/last_message_id.json"
+    last_ids = {}
+    if Path(last_ids_file).exists():
+        try:
+            with open(last_ids_file, "r", encoding="utf-8") as f:
+                last_ids = json.load(f)
+        except Exception:
+            pass
 
-    logger.info(f"🚀 شروع واکشی هم‌روند از {len(channels)} کانال تلگرام...")
-    t0 = time.time()
+    channel_results = []
+    all_configs = set()
+    invalid_channels = []
 
-    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_CHANNELS) as executor:
-        futures = {
-            executor.submit(scrape_channel, ch, checkpoints.get(ch, 0)): ch
-            for ch in channels
-        }
+    for idx, ch in enumerate(channels, 1):
+        logger.info(f"📡 [{idx}/{len(channels)}] واکشی کانال: {ch}")
+        html = fetch_page(ch)
+        if not html:
+            channel_results.append((ch, 0))
+            if idx < len(channels):
+                time.sleep(SLEEP_BETWEEN_CHANNELS)
+            continue
 
-        for fut in as_completed(futures):
-            ch, configs, max_id = fut.result()
-            if configs:
-                all_extracted_configs.update(configs)
-                logger.info(f"  ✓ کانال @{ch:<20} ➔ استخراج {len(configs):>3} کانفیگ")
-            updated_checkpoints[ch] = max_id
+        msg_pattern = re.compile(r'data-post="[^"]+/(\d+)"')
+        msg_ids = [int(m) for m in msg_pattern.findall(html)]
 
-    elapsed = round(time.time() - t0, 2)
-    logger.info(
-        f"✅ پایان واکشی تلگرام در {elapsed} ثانیه. مجموع کانفیگ‌های خام یکتا: {len(all_extracted_configs)}"
-    )
+        if not msg_ids:
+            logger.warning("   ↳ هیچ شناسه پیامی یافت نشد (احتمالاً کانال خصوصی، مسدود یا حذف شده)")
+            invalid_channels.append(ch)
+            channel_results.append((ch, "ERR"))
+            if idx < len(channels):
+                time.sleep(SLEEP_BETWEEN_CHANNELS)
+            continue
 
-    if not all_extracted_configs:
-        logger.warning("⚠️ هیچ کانفیگی از کانال‌ها یافت نشد.")
-        # حتی در صورت نیافتن کانفیگ، چک‌پوینت‌ها را هرس و ذخیره می‌کنیم
-        save_checkpoints(updated_checkpoints, active_channel_set)
-        return
+        last_id = last_ids.get(ch, 0)
+        new_msg_ids = [m for m in msg_ids if m > last_id]
 
-    # ذخیره استخر کانفیگ‌های تلگرام در data/telegram_configs.txt
-    OUTPUT_TELEGRAM_CONFIGS.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_TELEGRAM_CONFIGS, "w", encoding="utf-8") as f:
-        for c in sorted(all_extracted_configs):
-            f.write(c + "\n")
+        if new_msg_ids:
+            found = extract_configs(html)
+            logger.info(f"   ↳ {len(found)} کانفیگ استخراج شد (پیام‌های تازه: {len(new_msg_ids)})")
+            all_configs.update(found)
+            channel_results.append((ch, len(found)))
+            last_ids[ch] = max(msg_ids)
+        else:
+            logger.info(f"   ↳ ۰ پیام جدید — تمامی {len(msg_ids)} پست قبلاً خوانده شده‌اند")
+            channel_results.append((ch, 0))
 
-    # ادغام با all_servers.txt جهت ورود به خط لوله آبشار
-    existing_servers: Set[str] = set()
-    if RAW_ALL_SERVERS.exists():
-        with open(RAW_ALL_SERVERS, "r", encoding="utf-8", errors="ignore") as f:
-            existing_servers = {
-                line.strip() for line in f if line.strip() and not line.startswith("#")
-            }
+        if idx < len(channels):
+            time.sleep(SLEEP_BETWEEN_CHANNELS)
 
-    combined_servers = existing_servers.union(all_extracted_configs)
-    with open(RAW_ALL_SERVERS, "w", encoding="utf-8") as f:
-        f.write(f"# Telegram & Git Harvested Raw Pool — Total: {len(combined_servers)}\n")
-        for c in sorted(combined_servers):
-            f.write(c + "\n")
+    # بروزرسانی شناسه‌های پیام‌ها
+    try:
+        Path("data").mkdir(exist_ok=True)
+        with open(last_ids_file, "w", encoding="utf-8") as f:
+            json.dump(last_ids, f, indent=2)
+    except Exception as e:
+        logger.warning(f"خطا در ذخیره last_message_id.json: {e}")
 
-    # ذخیره چک‌پوینت با تضمین هرس کانال‌های مرده و حجم فوق‌سبک چند کیلوبایتی
-    save_checkpoints(updated_checkpoints, active_channel_set)
-    logger.info(f"💾 استخر خام در {RAW_ALL_SERVERS} به‌روزرسانی شد ({len(combined_servers)} کانفیگ).")
-    logger.info("🛡️ نگهبان حجم: چک‌پوینت‌ها هرس و سبک‌سازی شدند.")
+    # تفکیک کانال‌های نامعتبر
+    if invalid_channels:
+        invalid_file = "data/invalid_channels.txt"
+        try:
+            with open(invalid_file, "w", encoding="utf-8") as f:
+                f.write(f"Invalid Telegram Channels — {datetime.now(timezone.utc).isoformat()}\n\n")
+                for ch in invalid_channels:
+                    f.write(f"{ch}\n")
+        except Exception as e:
+            logger.warning(f"خطا در ذخیره invalid_channels.txt: {e}")
 
+    if all_configs:
+        save_to_db(all_configs)
+    else:
+        logger.warning("در این اجرا کانفیگ جدیدی یافت نشد.")
+
+    # بروزرسانی فایل گزارش عملکرد کانال‌ها
+    report_file = "data/channel_report.txt"
+    history = {}
+    if Path(report_file).exists():
+        with open(report_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or ':' not in line:
+                    continue
+                parts = line.split(':', 1)
+                if len(parts) != 2:
+                    continue
+                c_name, counts = parts
+                c_name = c_name.strip()
+                counts_clean = [c.strip() for c in counts.split(',') if c.strip().isdigit() or c.strip() == "ERR"]
+                history[c_name] = counts_clean
+
+    for ch, count in channel_results:
+        val = str(count)
+        if ch in history:
+            history[ch].append(val)
+        else:
+            history[ch] = [val]
+
+    with open(report_file, "w", encoding="utf-8") as f:
+        f.write(f"Telegram Channel Report — last update: {datetime.now(timezone.utc).isoformat()}\n\n")
+        for ch in sorted(history.keys()):
+            counts_str = ", ".join(history[ch])
+            f.write(f"{ch}: {counts_str}\n")
+
+    logger.info("✅ پایان موفقیت‌آمیز جمع‌آوری تلگرام.")
 
 if __name__ == "__main__":
     main()
