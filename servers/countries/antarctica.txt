@@ -1,1 +1,0 @@
-vless://8710a337-f504-4b75-8989-224cfd803b2d@2.27.26.128:443?sni=aq-1.global-cdn.org&flow=xtls-rprx-vision&fp=safari&security=tls#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%A6%F0%9F%87%B6%20Antarctica%0A%C2%AE%EF%B8%8FH2nexus%20Cloud%20Se%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1TLS%20High-Speed%20%7C%20VLESS%20IPv4
