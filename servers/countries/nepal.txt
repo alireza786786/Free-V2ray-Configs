@@ -1,0 +1,1 @@
+trojan://3747000103274291200@154.205.151.46:443?sni=loving-boa.treefrog761.one&peer=loving-boa.treefrog761.one&security=tls#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%B3%F0%9F%87%B5%20Nepal%0A%C2%AE%EF%B8%8FLightnode%20Limite%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1TLS%20High-Speed%20%7C%20TROJAN%20IPv4
