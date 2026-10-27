@@ -12,7 +12,6 @@ collector.db-shm
 collector.log
 
 # Pipeline state - regenerated on every run, must never be committed
-data/geoip_cache.json
 data/tested_servers.json
 collector_cache.json
 *.cache
