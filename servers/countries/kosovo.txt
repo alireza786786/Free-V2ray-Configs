@@ -1,1 +1,0 @@
-vless://c3302b07-7717-465a-bf5e-83ac9e9b133d@38.190.150.75:4655?security=none&encryption=none&headerType=none&type=tcp#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%BD%F0%9F%87%B0%20Kosovo%0A%C2%AE%EF%B8%8FCogent%20Communica%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1VIP%20Strict%20%7C%20VLESS%20IPv4
