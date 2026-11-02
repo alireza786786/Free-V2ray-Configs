@@ -1,1 +1,0 @@
-vless://7b22dce8-7ebd-425b-8ca4-7b6190321985@13.143.176.83:443?security=tls&amp;sni=a.es-1.bnc-gt-r1.co.uk&amp;alpn=h2&amp;fp=qq&amp;type=grpc&amp;serviceName=grpc#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%AA%F0%9F%87%AA%20Estonia%0A%C2%AE%EF%B8%8F%27Ghita%20Telekom%27%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1gRPC%20TLS%20%7C%20VLESS%20IPv4
