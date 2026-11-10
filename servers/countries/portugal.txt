@@ -1,0 +1,1 @@
+vless://bf14dc50-e9f2-49fd-8642-620446edeafb@195.133.92.228:443?sni=v1-24z.pages.dev&type=ws&host=v1-24z.pages.dev&path=/fp=chrome&security=tls#%F0%9F%91%89%F0%9F%86%94%40Goodbaye_filtering%0A%F0%9F%93%A1%F0%9F%87%B5%F0%9F%87%B9%20Portugal%0A%C2%AE%EF%B8%8FBaxet%20Group%20Inc.%0A%F0%9F%85%BF%EF%B8%8Fping%3A128ms%0A%E2%9A%A1TLS%20High-Speed%20%7C%20VLESS%20IPv4
