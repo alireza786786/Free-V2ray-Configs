@@ -327,7 +327,6 @@ toitan_proxy
 shadowsockskeys
 hajmvpn_config
 kafing_2
-config_fre
 karina_edu
 vpn_jet7
 hi_proxy_iran
